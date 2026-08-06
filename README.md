@@ -23,11 +23,17 @@ Vercel only serves the **client**. The Colyseus WebSocket **server** needs a sep
 
 ### 1. Client on Vercel
 
-1. Import this GitHub repo in Vercel.
-2. Set **Root Directory** to `client`.
-3. Build command: `npm run build` (uses `client/vercel.json`).
-4. Add env var:
-   - `VITE_COLYSEUS_URL` = `wss://YOUR-COLyseus-HOST` (must be `wss://` in production)
+Import this GitHub repo in Vercel and keep **Root Directory** as the repo root — the
+root `vercel.json` installs and builds `client/` and serves `client/dist`.
+
+Add env var:
+- `VITE_COLYSEUS_URL` = `wss://YOUR-COLYSEUS-HOST` (must be `wss://` in production)
+
+If you'd rather scope the project to the client, set **Root Directory** to `client`
+instead; `client/vercel.json` covers that case (output `dist`).
+
+> A `404: NOT_FOUND` after deploy means Vercel produced no static output — usually a
+> Root Directory / output directory mismatch between those two setups.
 
 ### 2. Server elsewhere
 
