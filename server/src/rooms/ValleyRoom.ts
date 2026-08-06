@@ -84,7 +84,6 @@ export class ValleyRoom extends Room<ValleyState> {
   maxClients = MAX_PLAYERS;
   private attackCooldown = new Map<string, number>();
   private playerIframes = new Map<string, number>();
-  private actedThisTurn = new Set<string>();
   private bulletSeq = 0;
   private spawnAcc = 0;
   private patternCursor = 0;
@@ -149,6 +148,7 @@ export class ValleyRoom extends Room<ValleyState> {
     if (this.state.acceptedBy === client.sessionId && this.state.inspectionActive) {
       // keep inspection running for others
     }
+    this.maybeEndPlayerTurn();
   }
 
   private claimBedSlot() {
@@ -453,13 +453,29 @@ export class ValleyRoom extends Room<ValleyState> {
     return dist(cx, cy, closestX, closestY) < r;
   }
 
+  private fighters() {
+    return [...this.state.players.values()].filter((p) => p.inInspection && p.hp > 0);
+  }
+
+  private allFightersActed() {
+    const fighters = this.fighters();
+    return fighters.length > 0 && fighters.every((p) => p.actedThisTurn);
+  }
+
+  /** End the party player phase once everyone has fought/coffee'd (or wipe). */
+  private maybeEndPlayerTurn() {
+    if (this.state.battlePhase !== 'player_turn' || this.state.inspectionCleared) return;
+    if (this.fighters().length === 0) return;
+    if (this.allFightersActed()) this.startEnemyTurn();
+  }
+
   private attack(player: PlayerState) {
     if (!player.inInspection || player.sleeping) return;
     if (this.state.battlePhase !== 'player_turn' || this.state.inspectionCleared) return;
-    if (this.actedThisTurn.has(player.id)) {
+    if (player.actedThisTurn) {
       this.clientSend(player.id, 'notification', {
         title: 'Your turn',
-        text: 'Already acted — fight OR coffee, one per turn.',
+        text: 'Already acted — wait for the rest of the party.',
       });
       return;
     }
@@ -467,7 +483,7 @@ export class ValleyRoom extends Room<ValleyState> {
     const last = this.attackCooldown.get(player.id) || 0;
     if (now - last < ATTACK_COOLDOWN_MS) return;
     this.attackCooldown.set(player.id, now);
-    this.actedThisTurn.add(player.id);
+    player.actedThisTurn = true;
     player.attackFlash = now;
 
     // Hit the living monster with lowest HP (focus fire)
@@ -494,8 +510,10 @@ export class ValleyRoom extends Room<ValleyState> {
     target.hp -= ATTACK_DAMAGE;
     target.hurtFlash = now + HURT_FLASH_MS;
     const def = MONSTERS[targetType as MonsterType];
+    const ready = this.fighters().filter((p) => p.actedThisTurn).length;
+    const total = this.fighters().length;
     this.setAnnouncement(
-      `* ${player.name} FIGHT! ${def?.name ?? 'Enemy'} took ${ATTACK_DAMAGE} — ${Math.max(0, target.hp)}/${targetMax} HP`,
+      `* ${player.name} FIGHT! ${def?.name ?? 'Enemy'} took ${ATTACK_DAMAGE} — ${Math.max(0, target.hp)}/${targetMax} HP (${ready}/${total} ready)`,
     );
     if (target.hp <= 0) {
       this.setAnnouncement(`* ${def?.name ?? 'Enemy'} was defeated!`);
@@ -505,13 +523,12 @@ export class ValleyRoom extends Room<ValleyState> {
         if (!this.state.monsters.has(deadId)) return;
         this.state.monsters.delete(deadId);
         this.checkInspectionCleared();
+        this.maybeEndPlayerTurn();
       }, HURT_FLASH_MS);
     } else {
       this.checkInspectionCleared();
     }
-    if (!this.state.inspectionCleared) {
-      this.state.battlePhaseEndsAt = Math.min(this.state.battlePhaseEndsAt, Date.now() + 900);
-    }
+    if (!this.state.inspectionCleared) this.maybeEndPlayerTurn();
   }
 
   private checkInspectionCleared() {
@@ -537,13 +554,18 @@ export class ValleyRoom extends Room<ValleyState> {
     this.state.battlePhase = 'player_turn';
     this.state.battlePhaseEndsAt = Date.now() + PLAYER_TURN_MS;
     this.state.bullets.clear();
-    this.actedThisTurn.clear();
     this.spawnAcc = 0;
     this.state.dodgeHint = '';
     this.state.players.forEach((p) => {
+      p.actedThisTurn = false;
       if (p.inInspection) this.centerSoul(p);
     });
-    this.setAnnouncement('* Your turn — SPACE to fight OR C for coffee (one action).');
+    const n = this.fighters().length;
+    this.setAnnouncement(
+      n > 1
+        ? `* Party turn (${n}) — each fighter acts once (SPACE or C), then dodge together.`
+        : '* Your turn — SPACE to fight OR C for coffee (one action).',
+    );
   }
 
   private startEnemyTurn() {
@@ -727,10 +749,10 @@ export class ValleyRoom extends Room<ValleyState> {
       });
       return;
     }
-    if (this.actedThisTurn.has(player.id)) {
+    if (player.actedThisTurn) {
       this.clientSend(player.id, 'notification', {
         title: 'Your turn',
-        text: 'Already acted — fight OR coffee, one per turn.',
+        text: 'Already acted — wait for the rest of the party.',
       });
       return;
     }
@@ -749,18 +771,19 @@ export class ValleyRoom extends Room<ValleyState> {
       return;
     }
     this.addItem(COFFEE_ITEM_ID, -1);
-    this.actedThisTurn.add(player.id);
+    player.actedThisTurn = true;
     const before = player.hp;
     player.hp = Math.min(player.maxHp, player.hp + COFFEE_HEAL);
     const healed = player.hp - before;
     const left = this.getItemQty(COFFEE_ITEM_ID);
+    const ready = this.fighters().filter((p) => p.actedThisTurn).length;
+    const total = this.fighters().length;
     this.clientSend(player.id, 'notification', {
       title: 'Coffee',
       text: `* Sip… +${healed} HP (${player.hp}/${player.maxHp}). Cups left: ${left}`,
     });
-    if (!this.state.inspectionCleared) {
-      this.state.battlePhaseEndsAt = Math.min(this.state.battlePhaseEndsAt, Date.now() + 900);
-    }
+    this.setAnnouncement(`* ${player.name} drank coffee (${ready}/${total} ready)`);
+    if (!this.state.inspectionCleared) this.maybeEndPlayerTurn();
   }
 
   private acceptJob(player: PlayerState, jobId: string) {
@@ -783,7 +806,7 @@ export class ValleyRoom extends Room<ValleyState> {
     this.state.inspectionCleared = false;
     const lot = LOTS.find((l) => l.id === job.lotId);
     this.setAnnouncement(
-      `${player.name} accepted: ${job.title}. Look for the JOB sign at ${lot?.name ?? job.lotId}, then press E to enter.`,
+      `${player.name} accepted: ${job.title}. Party: meet at the glowing door at ${lot?.name ?? job.lotId} and press E — one shared fight.`,
     );
   }
 
@@ -805,10 +828,14 @@ export class ValleyRoom extends Room<ValleyState> {
     }
 
     player.inInspection = true;
+    player.actedThisTurn = this.state.battlePhase !== 'player_turn';
     this.centerSoul(player);
     if (player.hp <= 0) player.hp = player.maxHp;
+    const n = this.fighters().length;
     this.setAnnouncement(
-      `${player.name} joined the fight! HP ${player.hp}/${player.maxHp} — SPACE fight OR C coffee (one), then dodge.`,
+      n > 1
+        ? `${player.name} joined the party fight (${n} inside)! Shared monsters — each acts once, then dodge together.`
+        : `${player.name} entered the fight! HP ${player.hp}/${player.maxHp} — SPACE fight OR C coffee, then dodge.`,
     );
     this.broadcast('enterInspection', { jobId: job.id });
   }
@@ -836,6 +863,7 @@ export class ValleyRoom extends Room<ValleyState> {
 
   private leaveInspection(player: PlayerState) {
     player.inInspection = false;
+    player.actedThisTurn = false;
     player.x = 10 * TILE;
     player.y = 12.5 * TILE;
     let anyInside = false;
@@ -849,6 +877,8 @@ export class ValleyRoom extends Room<ValleyState> {
       this.state.inspectionCleared = false;
       this.state.battlePhase = 'player_turn';
       this.setAnnouncement('Party left the inspection. Job still available.');
+    } else {
+      this.maybeEndPlayerTurn();
     }
     this.broadcast('leaveInspection', {});
   }
@@ -1092,10 +1122,12 @@ export class ValleyRoom extends Room<ValleyState> {
           toDelete.push(b.id);
           if (p.hp <= 0) {
             p.inInspection = false;
+            p.actedThisTurn = false;
             p.x = 10 * TILE;
             p.y = 12.5 * TILE;
             this.setAnnouncement(`* ${p.name} was defeated! Sleep to recover.`);
             this.broadcast('leaveInspection', { sessionId: p.id });
+            this.maybeEndPlayerTurn();
           }
         }
       });

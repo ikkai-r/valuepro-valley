@@ -33,13 +33,14 @@ export const ENEMY_VISUALS: Record<MonsterType, EnemyVisual> = {
     attack: 'forest_attack',
     attackLoop: 'forest_attack_loop',
   },
-  // Dark Fantasy Bat — bite attack
+  // Dark Fantasy Bat — bite start, then looping dive attack
   [MonsterType.ScopeCreepBat]: {
     kind: 'bat',
     scale: 1.7,
     idle: 'bat_idle',
     hurt: 'bat_hurt',
     attack: 'bat_attack_bite',
+    attackLoop: 'bat_attack',
   },
   // Forest Enemy3 — grounded idle, brown “beetle”
   [MonsterType.LegacyBugBeetle]: {
@@ -127,7 +128,7 @@ export function createEnemyAnimations(scene: Phaser.Scene) {
   ensureAnim(scene, 'bat_idle', 'sheet_bat_idle', 9, 10, -1);
   ensureAnim(scene, 'bat_hurt', 'sheet_bat_hurt', 5, 14, 0);
   ensureAnim(scene, 'bat_attack_bite', 'sheet_bat_attack1', 8, 14, 0);
-  ensureAnim(scene, 'bat_attack', 'sheet_bat_attack2', 11, 14, 0);
+  ensureAnim(scene, 'bat_attack', 'sheet_bat_attack2', 11, 14, -1);
 
   // Forest: Idle 8, Fly 8, Hit 4, SmashStart 12, SmashLoop 3
   ensureAnim(scene, 'forest_idle', 'sheet_forest_idle', 8, 10, -1);

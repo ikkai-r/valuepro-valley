@@ -7,12 +7,14 @@ export class PlayerState extends Schema {
   x = 8 * 32;
   y = 12 * 32;
   colorIndex = 0;
-  hp = 10;
-  maxHp = 10;
+  hp = 15;
+  maxHp = 15;
   tool = 'sword';
   seedCrop = 'turnip';
   sleeping = false;
   inInspection = false;
+  /** True after fight OR coffee this player turn (party waits for everyone). */
+  actedThisTurn = false;
   coins = 50;
   facing = 'down';
   attackFlash = 0;
@@ -32,6 +34,7 @@ defineTypes(PlayerState, {
   seedCrop: 'string',
   sleeping: 'boolean',
   inInspection: 'boolean',
+  actedThisTurn: 'boolean',
   coins: 'number',
   facing: 'string',
   attackFlash: 'number',

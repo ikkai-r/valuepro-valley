@@ -131,12 +131,34 @@ export class InspectionScene extends Phaser.Scene {
       this.phaseText.setText('* YOU WON!');
       this.hint.setText('Press E to submit the report · L to leave');
     } else if (phase === 'player_turn') {
-      this.phaseText.setText(`* YOUR TURN — FIGHT! (${remain}s)`);
-      const cups = room?.state?.inventory?.get?.('coffee')?.qty ?? 0;
-      this.hint.setText(`SPACE = fight OR C = coffee (+HP, ×${cups}) · one action · L = flee`);
+      let ready = 0;
+      let total = 0;
+      const waiting: string[] = [];
+      state.players?.forEach(
+        (p: { inInspection: boolean; actedThisTurn?: boolean; name: string; hp: number }) => {
+          if (!p.inInspection || p.hp <= 0) return;
+          total += 1;
+          if (p.actedThisTurn) ready += 1;
+          else waiting.push(p.name);
+        },
+      );
+      const me = state.players?.get?.(getSessionId());
+      const iActed = !!me?.actedThisTurn;
+      if (total > 1) {
+        this.phaseText.setText(`* PARTY TURN ${ready}/${total} — ${remain}s`);
+        this.hint.setText(
+          iActed
+            ? `Waiting on: ${waiting.join(', ') || '…'} · then shared dodge`
+            : `SPACE = fight OR C = coffee · one each · then dodge together`,
+        );
+      } else {
+        this.phaseText.setText(`* YOUR TURN — FIGHT! (${remain}s)`);
+        const cups = room?.state?.inventory?.get?.('coffee')?.qty ?? 0;
+        this.hint.setText(`SPACE = fight OR C = coffee (+HP, ×${cups}) · one action · L = flee`);
+      }
     } else {
       this.phaseText.setText(`* DODGE! (${remain}s)`);
-      this.hint.setText('WASD / arrows move your SOUL');
+      this.hint.setText('WASD / arrows move your SOUL · bullets hit everyone');
     }
 
     const me = state.players?.get?.(getSessionId());
@@ -148,7 +170,13 @@ export class InspectionScene extends Phaser.Scene {
       if (me.inInspection) {
         this.soulLocal.setPosition(me.x, me.y);
         this.soulLocal.setVisible(true);
-        this.soulLocal.setFillStyle(phase === 'enemy_turn' ? 0xff0000 : 0xff6666);
+        if (phase === 'enemy_turn') {
+          this.soulLocal.setFillStyle(0xff0000);
+        } else if (me.actedThisTurn) {
+          this.soulLocal.setFillStyle(0x888888);
+        } else {
+          this.soulLocal.setFillStyle(0xff6666);
+        }
       } else {
         this.soulLocal.setVisible(false);
       }
@@ -275,7 +303,17 @@ export class InspectionScene extends Phaser.Scene {
           this.remotes.set(id, c);
         }
         c.setPosition(p.x, p.y);
-        (c.getAt(1) as Phaser.GameObjects.Text).setText(`${p.name}`);
+        const acted = !!(p as { actedThisTurn?: boolean }).actedThisTurn;
+        const phaseNow = state.battlePhase || 'player_turn';
+        const mark = phaseNow === 'player_turn' && acted ? ' ✓' : '';
+        (c.getAt(1) as Phaser.GameObjects.Text).setText(`${p.name}${mark}`);
+        (c.getAt(0) as Phaser.GameObjects.Polygon).setFillStyle(
+          phaseNow === 'enemy_turn'
+            ? playerColor(p.gender, p.colorIndex)
+            : acted
+              ? 0x888888
+              : playerColor(p.gender, p.colorIndex),
+        );
       },
     );
     for (const [id, spr] of this.remotes) {

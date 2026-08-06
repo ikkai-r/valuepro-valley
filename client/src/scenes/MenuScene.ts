@@ -214,14 +214,14 @@ export class MenuScene extends Phaser.Scene {
         number: '2',
         badge: 'JOB',
         heading: 'HELP WANTED',
-        detail: 'Press J or E at HELP WANTED, accept a job, find the glowing door, press E.',
+        detail: 'Accept a job, glowing door + E. Party shares one fight — everyone acts, then dodge together.',
         accent: 0xc97843,
       },
       {
         number: '3',
         badge: 'FIGHT',
-        heading: 'PASS INSPECTION',
-        detail: 'One action: SPACE fight OR C coffee (+HP). Then WASD dodge.',
+        heading: 'PARTY TURNS',
+        detail: 'Each fighter: SPACE or C once. When all ready (or timer), shared dodge with WASD.',
         accent: 0xa84232,
       },
     ];
