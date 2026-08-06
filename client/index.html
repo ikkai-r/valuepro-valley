@@ -62,28 +62,26 @@
         background: linear-gradient(#6ccbe3 0 55%, #52a550 55%);
         border: 6px solid #9a4c2d;
         box-shadow: inset 0 0 0 3px #ffe19a;
+        overflow: hidden;
       }
 
       .vv-character-sprite {
-        position: relative;
-        width: 46px;
-        height: 70px;
-        margin-top: 22px;
-        background: #8a4db6;
-        border: 4px solid #4a2738;
-        border-radius: 8px 8px 4px 4px;
+        width: 96px;
+        height: 96px;
+        margin-top: 24px;
+        background-repeat: no-repeat;
+        background-position: center;
+        background-size: 96px 96px;
+        image-rendering: pixelated;
+        filter: drop-shadow(0 5px 0 rgb(35 72 45 / 35%));
       }
 
-      .vv-character-sprite::before {
-        content: '';
-        position: absolute;
-        width: 38px;
-        height: 38px;
-        top: -32px;
-        left: 0;
-        background: #efb07b;
-        border: 4px solid #4a2738;
-        border-radius: 50%;
+      .vv-character-sprite[data-gender='male'] {
+        background-image: url('/assets/characters/male-nohat-idle.png');
+      }
+
+      .vv-character-sprite[data-gender='female'] {
+        background-image: url('/assets/characters/female-nohat-idle.png');
       }
 
       .vv-character-card label {

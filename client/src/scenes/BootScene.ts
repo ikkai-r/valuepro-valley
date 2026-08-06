@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { SRC } from '../tiles';
 import { createEnemyAnimations, preloadEnemySheets } from '../enemies';
+import { createCharacterAnimations, preloadCharacterSheets } from '../characters';
 
 /** Load cozy tileset + enemy combat sheets + placeholders for characters/UI. */
 export class BootScene extends Phaser.Scene {
@@ -18,6 +19,7 @@ export class BootScene extends Phaser.Scene {
       frameHeight: SRC,
     });
     preloadEnemySheets(this);
+    preloadCharacterSheets(this);
   }
 
   async create() {
@@ -34,6 +36,7 @@ export class BootScene extends Phaser.Scene {
     }
 
     createEnemyAnimations(this);
+    createCharacterAnimations(this);
 
     const g = this.make.graphics({ x: 0, y: 0 }, false);
 

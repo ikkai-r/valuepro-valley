@@ -381,7 +381,10 @@ export class MenuScene extends Phaser.Scene {
         <button type="button" class="vv-card-close" data-action="cancel">×</button>
         <h2>${mode === 'create' ? 'NEW CHARACTER' : 'JOIN VALLEY'}</h2>
         <div class="vv-character-layout">
-          <div class="vv-character-preview"><div class="vv-character-sprite"></div></div>
+          <div class="vv-character-preview">
+            <div class="vv-character-sprite" data-gender="${currentGender}" role="img"
+              aria-label="${currentGender === 'female' ? 'Female' : 'Male'} character"></div>
+          </div>
           <div>
             <label>Character name
               <input data-field="name" maxlength="16" autocomplete="off"
@@ -413,6 +416,14 @@ export class MenuScene extends Phaser.Scene {
         selectedGender = button.dataset.gender as PlayerGender;
         root.querySelectorAll('[data-gender]').forEach((option) => option.classList.remove('selected'));
         button.classList.add('selected');
+        const preview = root.querySelector<HTMLElement>('.vv-character-sprite');
+        if (preview) {
+          preview.dataset.gender = selectedGender;
+          preview.setAttribute(
+            'aria-label',
+            `${selectedGender === 'female' ? 'Female' : 'Male'} character`,
+          );
+        }
       });
     });
     root.querySelector<HTMLElement>('[data-action="cancel"]')?.addEventListener('click', () => {

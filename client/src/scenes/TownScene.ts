@@ -1,11 +1,13 @@
 import Phaser from 'phaser';
 import { COFFEE_COST, JOBS, LOTS, MAP, NPCS, PLAYER_COLORS, TILE, Tool } from '@shared/index';
+import { playCharacterAnim } from '../characters';
 import { getRoom, getSessionId, sendInput } from '../net';
 import { Ground, House, fillGrass, fillPathNetwork, placeBuilding, placeTree, tileAt } from '../tiles';
 import { PIXEL_FONT, px } from '../ui/font';
 
 const FEMALE_COLORS = [0xec407a, 0xab47bc, 0x26a69a, 0xffa726];
 const MALE_COLORS = [0x42a5f5, 0x66bb6a, 0x8d6e63, 0x5c6bc0];
+const CHAR_SCALE = 2;
 
 /** Hotbar slots 1-6 come from the room — each valley stocks a random set. */
 export function hotbarGifts(): string[] {
@@ -20,8 +22,10 @@ function playerColor(gender: string | undefined, colorIndex: number) {
 }
 
 export class TownScene extends Phaser.Scene {
-  private localSprite!: Phaser.GameObjects.Arc;
+  private localSprite!: Phaser.GameObjects.Sprite;
+  private localLabel!: Phaser.GameObjects.Text;
   private remoteSprites = new Map<string, Phaser.GameObjects.Container>();
+  private lastPos = new Map<string, { x: number; y: number }>();
   private npcSprites = new Map<string, Phaser.GameObjects.Container>();
   private bedSprites = new Map<string, Phaser.GameObjects.Container>();
   private bedsLabel?: Phaser.GameObjects.Text;
@@ -57,7 +61,16 @@ export class TownScene extends Phaser.Scene {
     this.drawWorld();
     this.drawNpcs();
 
-    this.localSprite = this.add.circle(10 * TILE, 12.5 * TILE, 12, 0xffffff).setDepth(200);
+    this.localSprite = this.add
+      .sprite(10 * TILE, 12.5 * TILE, 'char_female_down', 1)
+      .setScale(CHAR_SCALE)
+      .setOrigin(0.5, 0.75)
+      .setDepth(200);
+    this.localLabel = this.add
+      .text(10 * TILE, 12.5 * TILE - 28, '', px(11, '#e3f2fd'))
+      .setOrigin(0.5)
+      .setDepth(201);
+    playCharacterAnim(this.localSprite, 'female', 'down', false);
     this.cameras.main.startFollow(this.localSprite, true, 0.12, 0.12);
 
     this.marker = this.add
@@ -340,6 +353,7 @@ export class TownScene extends Phaser.Scene {
           colorIndex: number;
           name: string;
           gender?: string;
+          facing?: string;
           inInspection: boolean;
           sleeping: boolean;
           bedSlot?: number;
@@ -351,24 +365,36 @@ export class TownScene extends Phaser.Scene {
         this.syncBed(id, p.name, p.bedSlot ?? -1, tint, !!p.sleeping);
         if ((p.bedSlot ?? -1) >= 0) seenBeds.add(id);
 
+        const prev = this.lastPos.get(id);
+        const moving = !!prev && (Math.abs(prev.x - p.x) > 0.4 || Math.abs(prev.y - p.y) > 0.4);
+        this.lastPos.set(id, { x: p.x, y: p.y });
+
         if (id === getSessionId()) {
           if (!p.inInspection) {
             this.localSprite.setPosition(p.x, p.y);
-            this.localSprite.setFillStyle(tint);
             this.localSprite.setDepth(100 + p.y);
             this.localSprite.setVisible(!p.sleeping);
+            this.localLabel.setPosition(p.x, p.y - 28).setText(p.name).setDepth(101 + p.y);
+            this.localLabel.setVisible(!p.sleeping);
+            playCharacterAnim(this.localSprite, p.gender, p.facing, moving && !p.sleeping);
+          } else {
+            this.localSprite.setVisible(false);
+            this.localLabel.setVisible(false);
           }
           return;
         }
         let c = this.remoteSprites.get(id);
         if (!c) {
-          const body = this.add.circle(0, 0, 12, tint);
-          const label = this.add.text(0, -20, p.name, px(11, '#e3f2fd')).setOrigin(0.5);
+          const body = this.add
+            .sprite(0, 0, 'char_female_down', 1)
+            .setScale(CHAR_SCALE)
+            .setOrigin(0.5, 0.75);
+          const label = this.add.text(0, -28, p.name, px(11, '#e3f2fd')).setOrigin(0.5);
           c = this.add.container(p.x, p.y, [body, label]);
           this.remoteSprites.set(id, c);
-        } else {
-          (c.getAt(0) as Phaser.GameObjects.Arc).setFillStyle(tint);
         }
+        const body = c.getAt(0) as Phaser.GameObjects.Sprite;
+        playCharacterAnim(body, p.gender, p.facing, moving && !p.sleeping);
         c.setPosition(p.x, p.y);
         c.setDepth(100 + p.y);
         c.setVisible(!p.inInspection && !p.sleeping);
@@ -379,6 +405,7 @@ export class TownScene extends Phaser.Scene {
       if (!seen.has(id)) {
         spr.destroy();
         this.remoteSprites.delete(id);
+        this.lastPos.delete(id);
       }
     }
     for (const [id, spr] of this.bedSprites) {

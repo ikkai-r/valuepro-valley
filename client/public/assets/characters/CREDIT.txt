@@ -1,0 +1,7 @@
+Home-screen + town character sprites
+
+Extracted from the user-provided Pokémon HeartGold / SoulSilver Ethan and Lyra
+sprite resource sheets. Only the no-hat overworld walk cycles (down / up / left /
+right) and front-facing idle frames are included.
+
+Original sheets credit the rip to Dazz and the sprites to The Pokémon Company.
