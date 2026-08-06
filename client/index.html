@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ValuePro Valley</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;500;600;700&family=Press+Start+2P&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      html,
+      body,
+      #game {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: #1b2a1f;
+        font-family: 'Pixelify Sans', 'Press Start 2P', monospace;
+        image-rendering: pixelated;
+      }
+
+      .vv-character-card {
+        position: relative;
+        width: min(520px, calc(100vw - 64px));
+        box-sizing: border-box;
+        padding: 28px 32px 24px;
+        color: #6b3024;
+        background: #efb866;
+        border: 8px solid #6b3024;
+        border-radius: 12px;
+        box-shadow:
+          inset 0 0 0 4px #ffd884,
+          8px 10px 0 #3c1d18;
+        font-size: 18px;
+      }
+
+      .vv-character-card h2 {
+        margin: 0 0 20px;
+        color: #7d3229;
+        font-family: 'Press Start 2P', monospace;
+        font-size: 18px;
+        text-align: center;
+      }
+
+      .vv-character-layout {
+        display: grid;
+        grid-template-columns: 120px 1fr;
+        gap: 24px;
+        align-items: center;
+      }
+
+      .vv-character-preview {
+        display: grid;
+        place-items: center;
+        width: 112px;
+        height: 140px;
+        background: linear-gradient(#6ccbe3 0 55%, #52a550 55%);
+        border: 6px solid #9a4c2d;
+        box-shadow: inset 0 0 0 3px #ffe19a;
+      }
+
+      .vv-character-sprite {
+        position: relative;
+        width: 46px;
+        height: 70px;
+        margin-top: 22px;
+        background: #8a4db6;
+        border: 4px solid #4a2738;
+        border-radius: 8px 8px 4px 4px;
+      }
+
+      .vv-character-sprite::before {
+        content: '';
+        position: absolute;
+        width: 38px;
+        height: 38px;
+        top: -32px;
+        left: 0;
+        background: #efb07b;
+        border: 4px solid #4a2738;
+        border-radius: 50%;
+      }
+
+      .vv-character-card label {
+        display: block;
+        margin-bottom: 12px;
+        font-weight: 700;
+      }
+
+      .vv-character-card input {
+        display: block;
+        width: 100%;
+        box-sizing: border-box;
+        margin-top: 4px;
+        padding: 8px 10px;
+        color: #5b2d1f;
+        background: #ffe0a0;
+        border: 4px solid #9a4c2d;
+        outline: none;
+        font: 18px 'Pixelify Sans', monospace;
+        text-transform: none;
+      }
+
+      .vv-character-card input:focus {
+        border-color: #4e8d43;
+      }
+
+      .vv-gender-row,
+      .vv-character-actions {
+        display: flex;
+        gap: 8px;
+      }
+
+      .vv-character-card button {
+        padding: 8px 12px;
+        color: #6b3024;
+        background: #ffd078;
+        border: 4px solid #8e452c;
+        font: 700 16px 'Pixelify Sans', monospace;
+        cursor: pointer;
+      }
+
+      .vv-character-card button:hover,
+      .vv-character-card button.selected {
+        color: #fff8d5;
+        background: #4e8d43;
+      }
+
+      .vv-character-actions {
+        justify-content: center;
+        margin-top: 20px;
+      }
+
+      .vv-character-actions button {
+        min-width: 150px;
+        font-family: 'Press Start 2P', monospace;
+        font-size: 12px;
+      }
+
+      .vv-card-close {
+        position: absolute;
+        top: 8px;
+        right: 8px;
+        padding: 2px 7px !important;
+      }
+
+      .vv-join-help {
+        margin: 4px 0 0;
+        color: #754a32;
+        font-size: 14px;
+        line-height: 1.1;
+      }
+
+      .vv-setup-error {
+        min-height: 20px;
+        margin-top: 8px;
+        color: #a62626;
+        text-align: center;
+      }
+
+      @media (max-width: 540px) {
+        .vv-character-card {
+          padding: 24px 20px 16px;
+        }
+
+        .vv-character-layout {
+          grid-template-columns: 1fr;
+        }
+
+        .vv-character-preview {
+          display: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="game"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

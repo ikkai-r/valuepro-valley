@@ -1,0 +1,5 @@
+Enemy sprites (FREE packs):
+- Dark Fantasy Enemies FREE — Bat with VFX
+- Flying Forest Enemies FREE — Enemy3 (movement-in-animation, with hit VFX)
+
+Used for ValuePro Valley inspection combat idle / attack / hurt animations.
