@@ -1,0 +1,14 @@
+# Render blueprint — deploys the Colyseus WebSocket server from the repo root
+# (the server imports shared/, so the whole repo must be the build context).
+# The Phaser client deploys separately on Vercel (see root vercel.json).
+services:
+  - type: web
+    name: valuepro-valley-server
+    runtime: node
+    plan: free
+    buildCommand: npm run install:server
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: "20"

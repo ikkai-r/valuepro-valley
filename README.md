@@ -35,9 +35,18 @@ instead; `client/vercel.json` covers that case (output `dist`).
 > A `404: NOT_FOUND` after deploy means Vercel produced no static output — usually a
 > Root Directory / output directory mismatch between those two setups.
 
-### 2. Server elsewhere
+### 2. Server on Render (recommended)
 
-Deploy `server/` with Node, expose port `2567` (or whatever your host maps), and enable WebSockets. Point `VITE_COLYSEUS_URL` at that public `wss://` URL.
+`render.yaml` deploys from the **repo root** (needed because `server/` imports `shared/`).
+
+1. [Render Dashboard](https://dashboard.render.com) → **New** → **Blueprint** → connect this GitHub repo
+2. Apply the `valuepro-valley-server` service (free plan)
+3. After deploy, copy the service URL (e.g. `https://valuepro-valley-server.onrender.com`)
+4. In Vercel, set `VITE_COLYSEUS_URL` = `wss://valuepro-valley-server.onrender.com` (same host, `wss://`) and redeploy the client
+
+**Before a demo:** open `https://YOUR-SERVICE.onrender.com/health` in a browser and wait until you see `{"ok":true,...}`. Free instances sleep after ~15 minutes idle; that first wake can take 30–50s. Once healthy, keep a tab open or poke `/health` occasionally so it stays warm during the session.
+
+Other hosts (`Dockerfile` / Fly / Railway) are also wired if you switch later. The server reads `PORT` from the environment and falls back to `2567`.
 
 ## Controls
 

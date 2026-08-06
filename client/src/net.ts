@@ -9,7 +9,7 @@ let sessionId = '';
 let playerName = '';
 let playerGender: PlayerGender = 'female';
 
-/** Production builds should set VITE_COLYSEUS_URL (e.g. wss://your-server.example.com). */
+/** Production builds should set VITE_COLYSEUS_URL (e.g. wss://your-server.onrender.com). */
 export function colyseusUrl() {
   const fromEnv = import.meta.env.VITE_COLYSEUS_URL as string | undefined;
   return (fromEnv || DEFAULT_SERVER).replace(/\/$/, '');
