@@ -1,0 +1,7 @@
+NPC idle sprites
+
+Mapped 1:1 from Downloads/pixel/{name}.PNG to each shared NPC id
+(maillene, al, sudhir, david, savi, gabe, stewart, zach, kat, rica, elaine, ed).
+
+Source images were downscaled from large pixel-art exports to transparent 32×32
+idles (white background keyed out).

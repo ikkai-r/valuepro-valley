@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { COFFEE_COST, JOBS, LOTS, MAP, NPCS, PLAYER_COLORS, TILE, Tool } from '@shared/index';
 import { playCharacterAnim } from '../characters';
+import { npcTextureKey } from '../npcs';
 import { getRoom, getSessionId, sendInput } from '../net';
 import { Ground, House, fillGrass, fillPathNetwork, placeBuilding, placeTree, tileAt } from '../tiles';
 import { PIXEL_FONT, px } from '../ui/font';
@@ -8,6 +9,7 @@ import { PIXEL_FONT, px } from '../ui/font';
 const FEMALE_COLORS = [0xec407a, 0xab47bc, 0x26a69a, 0xffa726];
 const MALE_COLORS = [0x42a5f5, 0x66bb6a, 0x8d6e63, 0x5c6bc0];
 const CHAR_SCALE = 2;
+const NPC_SCALE = 2;
 
 /** Hotbar slots 1-6 come from the room — each valley stocks a random set. */
 export function hotbarGifts(): string[] {
@@ -302,9 +304,12 @@ export class TownScene extends Phaser.Scene {
 
   private drawNpcs() {
     for (const npc of NPCS) {
-      const body = this.add.circle(0, 0, 12, npc.color);
+      const key = npcTextureKey(npc.id);
+      const body = this.textures.exists(key)
+        ? this.add.image(0, 0, key).setScale(NPC_SCALE).setOrigin(0.5, 0.85)
+        : this.add.circle(0, 0, 12, npc.color);
       const label = this.add
-        .text(0, -22, npc.name, {
+        .text(0, -28, npc.name, {
           fontFamily: PIXEL_FONT,
           fontSize: '10px',
           color: '#fff',
