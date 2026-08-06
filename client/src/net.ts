@@ -1,5 +1,6 @@
 import type { Room } from 'colyseus.js';
 import type { PlayerGender } from '@shared/types';
+import { DEFAULT_SERVER } from '@shared/index';
 
 export type ValleyRoom = Room;
 
@@ -7,6 +8,12 @@ let room: ValleyRoom | null = null;
 let sessionId = '';
 let playerName = '';
 let playerGender: PlayerGender = 'female';
+
+/** Production builds should set VITE_COLYSEUS_URL (e.g. wss://your-server.example.com). */
+export function colyseusUrl() {
+  const fromEnv = import.meta.env.VITE_COLYSEUS_URL as string | undefined;
+  return (fromEnv || DEFAULT_SERVER).replace(/\/$/, '');
+}
 
 export function setRoom(r: ValleyRoom | null) {
   room = r;

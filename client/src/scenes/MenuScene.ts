@@ -1,8 +1,9 @@
 import Phaser from 'phaser';
 import { Client } from 'colyseus.js';
-import { DEFAULT_SERVER, ROOM_NAME } from '@shared/index';
+import { ROOM_NAME } from '@shared/index';
 import type { PlayerGender } from '@shared/types';
 import {
+  colyseusUrl,
   getPlayerGender,
   getPlayerName,
   setPlayerGender,
@@ -152,9 +153,9 @@ export class MenuScene extends Phaser.Scene {
 
   private drawHowToPlay(width: number, height: number, compact: boolean) {
     const panelWidth = Math.min(960, width - 48);
-    const panelHeight = compact ? 180 : 270;
+    const panelHeight = compact ? 210 : 300;
     const x = width / 2;
-    const y = compact ? 288 : height * 0.47;
+    const y = compact ? 300 : height * 0.48;
     const left = x - panelWidth / 2;
     const top = y - panelHeight / 2;
     const g = this.add.graphics().setDepth(5);
@@ -182,6 +183,25 @@ export class MenuScene extends Phaser.Scene {
       .setOrigin(0.5)
       .setDepth(7);
 
+    // Goal — win by clearing every Help Wanted job.
+    const goalY = top + 56;
+    const goalH = compact ? 28 : 32;
+    g.fillStyle(0x5b2d1f, 0.92);
+    g.fillRoundedRect(left + 22, goalY, panelWidth - 44, goalH, 6);
+    g.lineStyle(2, 0xc9a227);
+    g.strokeRoundedRect(left + 22, goalY, panelWidth - 44, goalH, 6);
+    this.add
+      .text(
+        x,
+        goalY + goalH / 2,
+        compact
+          ? 'GOAL  ·  Finish every Help Wanted job to win'
+          : 'GOAL  ·  Finish every Help Wanted job to reopen the valley',
+        pxTitle(compact ? 8 : 10, '#fff8d5'),
+      )
+      .setOrigin(0.5)
+      .setDepth(7);
+
     const steps = [
       {
         number: '1',
@@ -194,21 +214,21 @@ export class MenuScene extends Phaser.Scene {
         number: '2',
         badge: 'JOB',
         heading: 'HELP WANTED',
-        detail: 'Press J, accept a job, then find its orange door.',
+        detail: 'Press J or E at HELP WANTED, accept a job, find the glowing door, press E.',
         accent: 0xc97843,
       },
       {
         number: '3',
         badge: 'FIGHT',
         heading: 'PASS INSPECTION',
-        detail: 'Press E to enter. SPACE attacks; WASD dodges.',
+        detail: 'One action: SPACE fight OR C coffee (+HP). Then WASD dodge.',
         accent: 0xa84232,
       },
     ];
 
     if (compact) {
       steps.forEach((step, index) => {
-        const rowY = top + 60 + index * 35;
+        const rowY = top + 92 + index * 35;
         g.fillStyle(0xffe7b5, 0.95);
         g.fillRoundedRect(left + 18, rowY, panelWidth - 36, 30, 5);
         g.fillStyle(step.accent);
@@ -225,7 +245,7 @@ export class MenuScene extends Phaser.Scene {
 
     const gap = 14;
     const cardWidth = (panelWidth - 52 - gap * 2) / 3;
-    const cardTop = top + 60;
+    const cardTop = top + 98;
     const cardHeight = 142;
     steps.forEach((step, index) => {
       const cardLeft = left + 26 + index * (cardWidth + gap);
@@ -441,7 +461,7 @@ export class MenuScene extends Phaser.Scene {
   private async createRoom() {
     this.statusText.setText('Creating room…');
     try {
-      const client = new Client(DEFAULT_SERVER);
+      const client = new Client(colyseusUrl());
       const code = this.randomCode();
       const room = await client.create(ROOM_NAME, {
         roomCode: code,
@@ -453,14 +473,14 @@ export class MenuScene extends Phaser.Scene {
       this.scene.launch('UI');
     } catch (e) {
       console.error(e);
-      this.statusText.setText('Could not create room. Is the server running on :2567?');
+      this.statusText.setText(`Could not create room. Is the server up (${colyseusUrl()})?`);
     }
   }
 
   private async joinRoom(code: string) {
     this.statusText.setText(`Joining ${code}…`);
     try {
-      const client = new Client(DEFAULT_SERVER);
+      const client = new Client(colyseusUrl());
       const room = await client.joinById(code.toUpperCase(), this.joinOptions());
       setRoom(room);
       this.scene.start('Town');

@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { JOBS, LOTS, MAP, NPCS, PLAYER_COLORS, TILE, Tool } from '@shared/index';
+import { COFFEE_COST, JOBS, LOTS, MAP, NPCS, PLAYER_COLORS, TILE, Tool } from '@shared/index';
 import { getRoom, getSessionId, sendInput } from '../net';
 import { Ground, House, fillGrass, fillPathNetwork, placeBuilding, placeTree, tileAt } from '../tiles';
 import { PIXEL_FONT, px } from '../ui/font';
@@ -7,8 +7,12 @@ import { PIXEL_FONT, px } from '../ui/font';
 const FEMALE_COLORS = [0xec407a, 0xab47bc, 0x26a69a, 0xffa726];
 const MALE_COLORS = [0x42a5f5, 0x66bb6a, 0x8d6e63, 0x5c6bc0];
 
-/** Hotbar slots 3-6, in order. */
-export const GIFT_ITEMS = ['coffee', 'turnip', 'coffee_bean', 'sticky_note_flower'];
+/** Hotbar slots 1-6 come from the room — each valley stocks a random set. */
+export function hotbarGifts(): string[] {
+  const slots = getRoom()?.state?.giftSlots;
+  if (!slots) return [];
+  return Array.from(slots as Iterable<string>);
+}
 
 function playerColor(gender: string | undefined, colorIndex: number) {
   const palette = gender === 'male' ? MALE_COLORS : FEMALE_COLORS;
@@ -29,10 +33,9 @@ export class TownScene extends Phaser.Scene {
     D: Phaser.Input.Keyboard.Key;
   };
   private marker!: Phaser.GameObjects.Rectangle;
-  private doorHint!: Phaser.GameObjects.Rectangle;
+  private doorHint!: Phaser.GameObjects.Container;
   private doorHintText!: Phaser.GameObjects.Text;
-  private tool: Tool = Tool.Sword;
-  private giftItem = 'coffee';
+  private giftItem = '';
 
   constructor() {
     super('Town');
@@ -63,32 +66,59 @@ export class TownScene extends Phaser.Scene {
       .setFillStyle(0xffffff, 0.04)
       .setDepth(20);
 
-    this.doorHint = this.add.rectangle(0, 0, 28, 14, 0xff9800, 0.9).setVisible(false).setDepth(50);
+    // Small pulsing doorstep marker; the E prompt appears only when close.
+    const outerGlow = this.add
+      .ellipse(0, 0, 42, 18, 0xffd54f, 0.28)
+      .setStrokeStyle(2, 0xfff3b0, 0.8);
+    const doorstep = this.add.rectangle(0, 0, 28, 9, 0xffc107, 0.8);
     this.doorHintText = this.add
-      .text(0, 0, 'ENTER', px(10, '#fff3e0'))
+      .text(0, -20, 'E ENTER', {
+        fontFamily: PIXEL_FONT,
+        fontSize: '9px',
+        color: '#fff8d5',
+        backgroundColor: '#3c1d18cc',
+        padding: { x: 4, y: 2 },
+        align: 'center',
+      })
       .setOrigin(0.5)
+      .setVisible(false);
+    this.doorHint = this.add
+      .container(0, 0, [outerGlow, doorstep, this.doorHintText])
       .setVisible(false)
-      .setDepth(51);
+      .setDepth(50);
+    this.tweens.add({
+      targets: outerGlow,
+      alpha: { from: 0.25, to: 0.75 },
+      scaleX: { from: 0.85, to: 1.15 },
+      scaleY: { from: 0.85, to: 1.15 },
+      duration: 850,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.easeInOut',
+    });
 
     this.cursors = this.input.keyboard!.createCursorKeys();
     this.wasd = this.input.keyboard!.addKeys('W,A,S,D') as typeof this.wasd;
 
-    this.input.keyboard!.on('keydown-ONE', () => this.setTool(Tool.Sword));
-    this.input.keyboard!.on('keydown-TWO', () => this.setTool(Tool.Gift));
-    this.input.keyboard!.on('keydown-THREE', () => this.selectGift(GIFT_ITEMS[0]));
-    this.input.keyboard!.on('keydown-FOUR', () => this.selectGift(GIFT_ITEMS[1]));
-    this.input.keyboard!.on('keydown-FIVE', () => this.selectGift(GIFT_ITEMS[2]));
-    this.input.keyboard!.on('keydown-SIX', () => this.selectGift(GIFT_ITEMS[3]));
+    const selectSlot = (index: number) => {
+      const id = hotbarGifts()[index];
+      if (id) this.selectGift(id);
+    };
+    this.input.keyboard!.on('keydown-ONE', () => selectSlot(0));
+    this.input.keyboard!.on('keydown-TWO', () => selectSlot(1));
+    this.input.keyboard!.on('keydown-THREE', () => selectSlot(2));
+    this.input.keyboard!.on('keydown-FOUR', () => selectSlot(3));
+    this.input.keyboard!.on('keydown-FIVE', () => selectSlot(4));
+    this.input.keyboard!.on('keydown-SIX', () => selectSlot(5));
     this.input.keyboard!.on('keydown-E', () => sendInput({ type: 'interact' }));
-    this.input.keyboard!.on('keydown-SPACE', () => {
-      if (this.tool === Tool.Gift) this.giftNearest();
-      else sendInput({ type: 'attack' });
-    });
+    this.input.keyboard!.on('keydown-SPACE', () => sendInput({ type: 'attack' }));
     this.input.keyboard!.on('keydown-B', () => sendInput({ type: 'sleep' }));
     this.input.keyboard!.on('keydown-G', () => this.giftNearest());
     this.input.keyboard!.on('keydown-H', () => {
-      const i = (GIFT_ITEMS.indexOf(this.giftItem) + 1) % GIFT_ITEMS.length;
-      this.selectGift(GIFT_ITEMS[i]);
+      const slots = hotbarGifts();
+      if (!slots.length) return;
+      const i = (slots.indexOf(this.giftItem) + 1) % slots.length;
+      this.selectGift(slots[i]);
     });
 
     room.onStateChange(() => {
@@ -105,19 +135,15 @@ export class TownScene extends Phaser.Scene {
     room.onMessage('festival', () => this.game.events.emit('festival'));
 
     this.syncFromState();
-    this.setTool(Tool.Sword);
+    const firstSlot = hotbarGifts()[0];
+    if (firstSlot) this.selectGift(firstSlot);
   }
 
-  private setTool(tool: Tool) {
-    this.tool = tool;
-    sendInput({ type: 'setTool', tool });
-    this.game.events.emit('hud', { tool: this.tool, giftItem: this.giftItem });
-  }
-
-  /** Picking an item from slots 3-6 also swaps to the gift tool. */
+  /** The highlighted slot is what G sends — nothing else to switch. */
   private selectGift(itemId: string) {
     this.giftItem = itemId;
-    this.setTool(Tool.Gift);
+    sendInput({ type: 'setTool', tool: Tool.Gift });
+    this.game.events.emit('hud', { giftItem: itemId });
   }
 
   private updateCameraZoom() {
@@ -177,14 +203,46 @@ export class TownScene extends Phaser.Scene {
         (building.tileY - 0.4) * TILE,
         building.name,
       );
+      if (building.id === 'standup_cafe') {
+        const counter = MAP.cafeCounter;
+        this.add
+          .ellipse(counter.x, counter.y, 46, 24, 0xffe082, 0.22)
+          .setDepth(3);
+        this.add
+          .text(counter.x, counter.y - 20, `E · COFFEE $${COFFEE_COST}`, {
+            fontFamily: PIXEL_FONT,
+            fontSize: '9px',
+            color: '#ffe082',
+            backgroundColor: '#00000099',
+            padding: { x: 3, y: 2 },
+          })
+          .setOrigin(0.5)
+          .setDepth(40);
+      }
     }
 
-    // Props on plaza (not inside houses)
-    tileAt(this, 'house', House.sign, MAP.jobBoard.x - 8, MAP.jobBoard.y - 16, 8);
-    this.label(MAP.jobBoard.x + 8, MAP.jobBoard.y - 36, 'Jobs');
-
-    tileAt(this, 'house', House.sign, MAP.noticeboard.x - 8, MAP.noticeboard.y - 16, 8);
-    this.label(MAP.noticeboard.x + 8, MAP.noticeboard.y - 36, 'Quests');
+    // Help Wanted board — sign post with labels sitting directly on top of it.
+    tileAt(this, 'house', House.sign, MAP.jobBoard.x - 16, MAP.jobBoard.y - 16, 8);
+    this.add
+      .text(MAP.jobBoard.x, MAP.jobBoard.y - 26, 'HELP WANTED', {
+        fontFamily: PIXEL_FONT,
+        fontSize: '10px',
+        color: '#fff8e1',
+        backgroundColor: '#4e8d43dd',
+        padding: { x: 4, y: 2 },
+      })
+      .setOrigin(0.5)
+      .setDepth(40);
+    this.add
+      .text(MAP.jobBoard.x, MAP.jobBoard.y + 16, 'E', {
+        fontFamily: PIXEL_FONT,
+        fontSize: '9px',
+        color: '#ffe082',
+        backgroundColor: '#00000099',
+        padding: { x: 3, y: 2 },
+      })
+      .setOrigin(0.5)
+      .setDepth(40);
 
     // Bunk area label — beds themselves spawn per joined player in syncFromState.
     this.bedsLabel = this.add
@@ -267,6 +325,11 @@ export class TownScene extends Phaser.Scene {
     if (!room?.state) return;
     const state = room.state;
 
+    if (!this.giftItem) {
+      const firstSlot = hotbarGifts()[0];
+      if (firstSlot) this.selectGift(firstSlot);
+    }
+
     const seen = new Set<string>();
     const seenBeds = new Set<string>();
     state.players?.forEach(
@@ -333,11 +396,12 @@ export class TownScene extends Phaser.Scene {
     if (lot && state.activeJobId && !state.inspectionActive) {
       const dx = lot.x + lot.w / 2;
       const dy = lot.y + lot.h + 10;
+      const me = state.players?.get?.(getSessionId());
+      const nearDoor = !!me && Phaser.Math.Distance.Between(me.x, me.y, dx, dy) <= 44;
+      this.doorHintText.setVisible(nearDoor);
       this.doorHint.setPosition(dx, dy).setVisible(true);
-      this.doorHintText.setPosition(dx, dy - 16).setVisible(true);
     } else {
       this.doorHint.setVisible(false);
-      this.doorHintText.setVisible(false);
     }
   }
 

@@ -6,6 +6,9 @@ import {
   ATTACK_COOLDOWN_MS,
   ATTACK_DAMAGE,
   BATTLE_BOX,
+  COFFEE_COST,
+  COFFEE_HEAL,
+  COFFEE_ITEM_ID,
   ENEMY_TURN_MS,
   HEARTS_HATED_GIFT,
   HEARTS_LIKED_GIFT,
@@ -13,6 +16,9 @@ import {
   HEARTS_PER_TALK,
   HURT_FLASH_MS,
   JOBS,
+  GIFT_ITEMS,
+  GIFT_ITEM_IDS,
+  GIFT_SLOT_COUNT,
   LOTS,
   MAP,
   MAX_HEARTS,
@@ -24,7 +30,6 @@ import {
   PLAYER_MAX_HP,
   PLAYER_SPEED,
   PLAYER_TURN_MS,
-  QUESTS,
   RND_BANTER,
   SHARED_BANTER,
   SOUL_RADIUS,
@@ -56,9 +61,9 @@ type Msg =
   | { type: 'enterInspection' }
   | { type: 'leaveInspection' }
   | { type: 'submitReport' }
+  | { type: 'drinkCoffee' }
   | { type: 'sleep' }
   | { type: 'wake' }
-  | { type: 'tryCompleteQuest'; questId: string }
   | { type: 'setName'; name: string };
 
 function clamp(v: number, min: number, max: number) {
@@ -79,12 +84,16 @@ export class ValleyRoom extends Room<ValleyState> {
   maxClients = MAX_PLAYERS;
   private attackCooldown = new Map<string, number>();
   private playerIframes = new Map<string, number>();
-  private foughtThisTurn = new Set<string>();
+  private actedThisTurn = new Set<string>();
   private bulletSeq = 0;
   private spawnAcc = 0;
   private patternCursor = 0;
   private safeLane = 0;
   private lastNpcLine = new Map<string, string>();
+  private giftPrefs = new Map<
+    string,
+    { loved: string[]; liked: string[]; hated: string[] }
+  >();
   private simTimer?: ReturnType<typeof setInterval>;
   private saveTimer?: ReturnType<typeof setInterval>;
   private colorCursor = 0;
@@ -97,7 +106,11 @@ export class ValleyRoom extends Room<ValleyState> {
     this.state.roomCode = code;
 
     this.initHearts();
+    this.rollGiftSlots();
+    this.initGiftPrefs();
     this.initInventory();
+    // Foyer available from the start; deeper floors unlock by finishing jobs.
+    this.state.houseFloorUnlocked = Math.max(this.state.houseFloorUnlocked, 1);
     this.refreshJobs();
     this.tryLoadSnapshot(code);
 
@@ -198,13 +211,43 @@ export class ValleyRoom extends Room<ValleyState> {
     }
   }
 
+  private shuffled<T>(list: readonly T[]) {
+    const out = [...list];
+    for (let i = out.length - 1; i > 0; i -= 1) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [out[i], out[j]] = [out[j], out[i]];
+    }
+    return out;
+  }
+
+  /** Each valley stocks a different set of desk swag. */
+  private rollGiftSlots() {
+    this.state.giftSlots.clear();
+    for (const id of this.shuffled(GIFT_ITEM_IDS).slice(0, GIFT_SLOT_COUNT)) {
+      this.state.giftSlots.push(id);
+    }
+  }
+
+  /** Per-room shuffle so tastes (including Legacy Bug) differ each valley. */
+  private initGiftPrefs() {
+    this.giftPrefs.clear();
+    const slots = Array.from(this.state.giftSlots).filter((id): id is string => !!id);
+    for (const npc of NPCS) {
+      const pool: string[] = this.shuffled(slots.length ? slots : GIFT_ITEM_IDS);
+      const third = Math.max(1, Math.floor(pool.length / 3));
+      this.giftPrefs.set(npc.id, {
+        loved: pool.slice(0, third),
+        liked: pool.slice(third, third * 2),
+        hated: pool.slice(third * 2),
+      });
+    }
+  }
+
   private initInventory() {
-    const starter: Record<string, number> = {
-      coffee: 5,
-      turnip: 4,
-      coffee_bean: 3,
-      sticky_note_flower: 3,
-    };
+    const starter: Record<string, number> = { [COFFEE_ITEM_ID]: 3 };
+    this.state.giftSlots.forEach((id, index) => {
+      starter[id] = 5 - Math.min(3, index);
+    });
     for (const [id, qty] of Object.entries(starter)) {
       const item = new InventoryItem();
       item.itemId = id;
@@ -285,14 +328,14 @@ export class ValleyRoom extends Room<ValleyState> {
       case 'submitReport':
         this.submitReport(player);
         break;
+      case 'drinkCoffee':
+        this.drinkCoffee(player);
+        break;
       case 'sleep':
         this.trySleep(player);
         break;
       case 'wake':
         player.sleeping = false;
-        break;
-      case 'tryCompleteQuest':
-        this.tryCompleteQuest(player, msg.questId);
         break;
     }
   }
@@ -338,7 +381,7 @@ export class ValleyRoom extends Room<ValleyState> {
       if (this.blocked(x, y)) continue;
       player.x = x;
       player.y = y;
-      this.tryEnterJobDoor(player);
+      // Job entry is E-only (see interact → tryEnterJobDoor); walking never auto-enters.
       return;
     }
   }
@@ -383,14 +426,15 @@ export class ValleyRoom extends Room<ValleyState> {
     };
   }
 
-  /** Returns true if the player entered an inspection. */
+  /** Returns true if the player entered an inspection. Call only from interact (E). */
   private tryEnterJobDoor(player: PlayerState): boolean {
     if (!this.state.activeJobId || player.inInspection || player.sleeping) return false;
     const job = JOBS.find((j) => j.id === this.state.activeJobId);
     const lot = LOTS.find((l) => l.id === job?.lotId);
     if (!job || !lot) return false;
     const door = this.jobDoorPoint(lot);
-    if (!near(player.x, player.y, door.x, door.y, 56)) return false;
+    // Tight radius — must be at the doorstep, not just near the lot.
+    if (!near(player.x, player.y, door.x, door.y, 28)) return false;
     this.enterInspection(player);
     return true;
   }
@@ -412,15 +456,18 @@ export class ValleyRoom extends Room<ValleyState> {
   private attack(player: PlayerState) {
     if (!player.inInspection || player.sleeping) return;
     if (this.state.battlePhase !== 'player_turn' || this.state.inspectionCleared) return;
-    if (this.foughtThisTurn.has(player.id)) {
-      this.setAnnouncement(`${player.name} already FIGHT'd this turn.`);
+    if (this.actedThisTurn.has(player.id)) {
+      this.clientSend(player.id, 'notification', {
+        title: 'Your turn',
+        text: 'Already acted — fight OR coffee, one per turn.',
+      });
       return;
     }
     const now = Date.now();
     const last = this.attackCooldown.get(player.id) || 0;
     if (now - last < ATTACK_COOLDOWN_MS) return;
     this.attackCooldown.set(player.id, now);
-    this.foughtThisTurn.add(player.id);
+    this.actedThisTurn.add(player.id);
     player.attackFlash = now;
 
     // Hit the living monster with lowest HP (focus fire)
@@ -490,13 +537,13 @@ export class ValleyRoom extends Room<ValleyState> {
     this.state.battlePhase = 'player_turn';
     this.state.battlePhaseEndsAt = Date.now() + PLAYER_TURN_MS;
     this.state.bullets.clear();
-    this.foughtThisTurn.clear();
+    this.actedThisTurn.clear();
     this.spawnAcc = 0;
     this.state.dodgeHint = '';
     this.state.players.forEach((p) => {
       if (p.inInspection) this.centerSoul(p);
     });
-    this.setAnnouncement('* Your turn — press SPACE to FIGHT!');
+    this.setAnnouncement('* Your turn — SPACE to fight OR C for coffee (one action).');
   }
 
   private startEnemyTurn() {
@@ -513,14 +560,14 @@ export class ValleyRoom extends Room<ValleyState> {
     this.state.battlePhaseEndsAt = Date.now() + ENEMY_TURN_MS;
     this.state.bullets.clear();
     // Brief warning window, then one readable pattern at a time.
-    this.spawnAcc = -0.8;
+    this.spawnAcc = -0.55;
     this.patternCursor = 0;
     this.safeLane = Math.floor(Math.random() * 4);
-    this.state.dodgeHint = 'Get ready — watch for the open lane!';
+    this.state.dodgeHint = 'DODGE!';
     this.state.players.forEach((p) => {
       if (p.inInspection) this.centerSoul(p);
     });
-    this.setAnnouncement('* Dodge! Survive the attack!');
+    this.setAnnouncement('* Dodge!');
   }
 
   private interact(player: PlayerState) {
@@ -536,23 +583,16 @@ export class ValleyRoom extends Room<ValleyState> {
       return;
     }
 
-    // noticeboard quests (including office keys)
-    if (near(player.x, player.y, MAP.noticeboard.x, MAP.noticeboard.y, 40)) {
-      this.autoUnlockHeartQuests();
-      for (const id of ['quest_office_keys', 'quest_bridge', 'quest_cafe', 'quest_greenhouse']) {
-        this.state.questUnlocked.set(id, true);
-      }
-      this.setAnnouncement('Noticeboard updated. Hand in quests here with E.');
-      for (const q of QUESTS) {
-        if (!this.state.questCompleted.get(q.id)) this.tryCompleteQuest(player, q.id, true);
-      }
+    // Help Wanted board
+    if (near(player.x, player.y, MAP.jobBoard.x, MAP.jobBoard.y, 52)) {
+      this.clientSend(player.id, 'openJobs', {});
       return;
     }
 
-    // job board
-    if (near(player.x, player.y, MAP.jobBoard.x, MAP.jobBoard.y, 48)) {
-      this.clientSend(player.id, 'openJobs', {});
-      this.setAnnouncement('The Help Wanted board is open.');
+    // Standup Cafe — buy coffee for combat heals (counter sits outside the solid building)
+    const counter = MAP.cafeCounter;
+    if (counter && near(player.x, player.y, counter.x, counter.y, 52)) {
+      this.buyCoffee(player);
       return;
     }
 
@@ -586,7 +626,6 @@ export class ValleyRoom extends Room<ValleyState> {
     if (heart.talkedDay !== this.state.day) {
       heart.talkedDay = this.state.day;
       heart.points = Math.min(MAX_HEARTS * 100, heart.points + HEARTS_PER_TALK);
-      this.maybeUnlockHeartQuest(npcId);
     }
     this.setAnnouncement(`${npc.name}: "${line}" ♥ ${Math.floor(heart.points / 100)}/${MAX_HEARTS}`);
     this.clientSend(player.id, 'dialogue', {
@@ -612,114 +651,116 @@ export class ValleyRoom extends Room<ValleyState> {
     }
     this.addItem(itemId, -1);
     heart.giftedDay = this.state.day;
+    const prefs = this.giftPrefs.get(npcId) ?? {
+      loved: npc.lovedGifts,
+      liked: npc.likedGifts,
+      hated: npc.hatedGifts,
+    };
     let delta = HEARTS_LIKED_GIFT;
     let reaction = 'liked';
-    if (npc.lovedGifts.includes(itemId)) {
+    let gainLabel = '+1♥';
+    if (prefs.loved.includes(itemId)) {
       delta = HEARTS_LOVED_GIFT;
       reaction = 'loved';
-    } else if (npc.hatedGifts.includes(itemId)) {
+      gainLabel = '+3♥';
+    } else if (prefs.hated.includes(itemId)) {
       delta = HEARTS_HATED_GIFT;
       reaction = 'hated';
+      gainLabel = '−1♥';
+    } else if (!prefs.liked.includes(itemId)) {
+      // Neutral leftover → still a polite +1
+      delta = HEARTS_LIKED_GIFT;
+      reaction = 'liked';
+      gainLabel = '+1♥';
     }
     heart.points = clamp(heart.points + delta, 0, MAX_HEARTS * 100);
+    const giftName = GIFT_ITEMS[itemId]?.name || itemId.replaceAll('_', ' ');
+    const heartsShown = Math.floor(heart.points / 100);
     const friendshipText =
-      `${npc.name} ${reaction} the ${itemId.replaceAll('_', ' ')}! ♥ ${Math.floor(heart.points / 100)}/${MAX_HEARTS}`;
+      `${npc.name} ${reaction} the ${giftName}! ${gainLabel} · ♥ ${heartsShown}/${MAX_HEARTS}`;
     this.setAnnouncement(friendshipText);
     this.clientSend(player.id, 'notification', {
       title: npc.name,
       text: friendshipText,
     });
-    this.maybeUnlockHeartQuest(npcId);
+    this.clientSend(player.id, 'dialogue', {
+      npcId,
+      name: npc.name,
+      text:
+        reaction === 'loved'
+          ? `They loved the ${giftName}! (${gainLabel})`
+          : reaction === 'hated'
+            ? `…they hated the ${giftName}. (${gainLabel})`
+            : `They liked the ${giftName}. (${gainLabel})`,
+      hearts: Math.floor(heart.points / 100),
+    });
   }
 
-  private maybeUnlockHeartQuest(npcId: string) {
-    const npc = NPCS.find((n) => n.id === npcId);
-    const heart = this.state.hearts.get(npcId);
-    if (!npc || !heart || npc.heartQuestAt == null || !npc.heartQuestId) return;
-    if (Math.floor(heart.points / 100) >= npc.heartQuestAt) {
-      if (!this.state.questUnlocked.get(npc.heartQuestId)) {
-        this.state.questUnlocked.set(npc.heartQuestId, true);
-        this.setAnnouncement(`Quest unlocked: ${QUESTS.find((q) => q.id === npc.heartQuestId)?.title}`);
-      }
-    }
-  }
-
-  private autoUnlockHeartQuests() {
-    for (const npc of NPCS) this.maybeUnlockHeartQuest(npc.id);
-    // unlock porch paint at 100 rep
-    if (this.state.reputation >= 100) this.state.questUnlocked.set('quest_porch_paint', true);
-    this.state.questUnlocked.set('quest_attic_clear', true);
-  }
-
-  private tryCompleteQuest(player: PlayerState, questId: string, quiet = false) {
-    if (this.state.questCompleted.get(questId)) return;
-    const quest = QUESTS.find((q) => q.id === questId);
-    if (!quest) return;
-
-    // unlock gates
-    if (
-      questId !== 'quest_attic_clear' &&
-      !this.state.questUnlocked.get(questId) &&
-      !['quest_office_keys', 'quest_bridge', 'quest_cafe', 'quest_greenhouse'].includes(questId)
-    ) {
-      // heart quests need unlock; starter ones unlock at board after talk thresholds OR free start
-    }
-
-    // Free unlock starter quests on day 1 via board
-    if (['quest_office_keys', 'quest_bridge', 'quest_cafe', 'quest_greenhouse'].includes(questId)) {
-      this.state.questUnlocked.set(questId, true);
-    }
-
-    if (!this.state.questUnlocked.get(questId) && questId !== 'quest_attic_clear') {
-      if (!quiet) this.setAnnouncement('That quest is not unlocked yet.');
-      return;
-    }
-
-    let ok = false;
-    if (questId === 'quest_office_keys') {
-      ok = near(player.x, player.y, MAP.noticeboard.x, MAP.noticeboard.y, 64);
-    } else if (questId === 'quest_bridge') {
-      if (this.getItemQty('turnip') >= 2) {
-        this.addItem('turnip', -2);
-        ok = true;
-      }
-    } else if (questId === 'quest_cafe') {
-      if (this.getItemQty('coffee_bean') >= 1) {
-        this.addItem('coffee_bean', -1);
-        ok = true;
-      }
-    } else if (questId === 'quest_greenhouse') {
-      if (this.getItemQty('sticky_note_flower') >= 2) {
-        this.addItem('sticky_note_flower', -2);
-        ok = true;
-      }
-    } else if (questId === 'quest_porch_paint') {
-      ok = this.state.reputation >= 100;
-    } else if (questId === 'quest_attic_clear') {
-      ok = this.state.festivalDone || this.state.questCompleted.get('quest_attic_clear') === true;
-      // completed via boss report
-      return;
-    }
-
-    if (!ok) {
-      if (!quiet) this.setAnnouncement(`Cannot complete ${quest.title} yet.`);
-      return;
-    }
-
-    this.state.questCompleted.set(questId, true);
-    if (quest.rewardCoins) {
-      // shared coin pot to first player interacting — split to all
-      this.state.players.forEach((p) => {
-        p.coins += Math.floor((quest.rewardCoins || 0) / Math.max(1, this.state.players.size));
+  private buyCoffee(player: PlayerState) {
+    if (player.coins < COFFEE_COST) {
+      const short = COFFEE_COST - player.coins;
+      const text = `Not enough coins — coffee is $${COFFEE_COST}, you have $${player.coins} (need $${short} more). Finish a job to earn coins.`;
+      this.setAnnouncement(`Standup Cafe: ${text}`);
+      this.clientSend(player.id, 'notification', {
+        title: 'Standup Cafe',
+        text,
       });
+      return;
     }
-    if (quest.rewardSeeds) this.addItem(quest.rewardSeeds, 2);
-    if (quest.unlocksHouseFloor) {
-      this.state.houseFloorUnlocked = Math.max(this.state.houseFloorUnlocked, quest.unlocksHouseFloor);
-      this.refreshJobs();
+    player.coins -= COFFEE_COST;
+    this.addItem(COFFEE_ITEM_ID, 1);
+    const qty = this.getItemQty(COFFEE_ITEM_ID);
+    const text = `Bought a coffee (−$${COFFEE_COST}). Cups ready: ${qty}. In a fight press C instead of SPACE.`;
+    this.setAnnouncement(`Standup Cafe: ${text}`);
+    this.clientSend(player.id, 'notification', {
+      title: 'Standup Cafe',
+      text,
+    });
+  }
+
+  private drinkCoffee(player: PlayerState) {
+    if (!player.inInspection || player.sleeping) return;
+    if (this.state.battlePhase !== 'player_turn' || this.state.inspectionCleared) {
+      this.clientSend(player.id, 'notification', {
+        title: 'Coffee',
+        text: 'Only drink coffee on your turn.',
+      });
+      return;
     }
-    this.setAnnouncement(`Quest complete: ${quest.title}!`);
-    this.checkFestival();
+    if (this.actedThisTurn.has(player.id)) {
+      this.clientSend(player.id, 'notification', {
+        title: 'Your turn',
+        text: 'Already acted — fight OR coffee, one per turn.',
+      });
+      return;
+    }
+    if (player.hp >= player.maxHp) {
+      this.clientSend(player.id, 'notification', {
+        title: 'Coffee',
+        text: 'Already at full HP.',
+      });
+      return;
+    }
+    if (this.getItemQty(COFFEE_ITEM_ID) <= 0) {
+      this.clientSend(player.id, 'notification', {
+        title: 'Coffee',
+        text: 'No coffee left — buy more at Standup Cafe (E).',
+      });
+      return;
+    }
+    this.addItem(COFFEE_ITEM_ID, -1);
+    this.actedThisTurn.add(player.id);
+    const before = player.hp;
+    player.hp = Math.min(player.maxHp, player.hp + COFFEE_HEAL);
+    const healed = player.hp - before;
+    const left = this.getItemQty(COFFEE_ITEM_ID);
+    this.clientSend(player.id, 'notification', {
+      title: 'Coffee',
+      text: `* Sip… +${healed} HP (${player.hp}/${player.maxHp}). Cups left: ${left}`,
+    });
+    if (!this.state.inspectionCleared) {
+      this.state.battlePhaseEndsAt = Math.min(this.state.battlePhaseEndsAt, Date.now() + 900);
+    }
   }
 
   private acceptJob(player: PlayerState, jobId: string) {
@@ -734,7 +775,7 @@ export class ValleyRoom extends Room<ValleyState> {
     const job = JOBS.find((j) => j.id === jobId);
     if (!job) return;
     if (job.isBigHouse && (job.houseFloor || 0) > this.state.houseFloorUnlocked) {
-      this.setAnnouncement('Big House floor still locked. Complete more quests!');
+      this.setAnnouncement('Big House floor still locked. Clear earlier floors first!');
       return;
     }
     this.state.activeJobId = jobId;
@@ -742,7 +783,7 @@ export class ValleyRoom extends Room<ValleyState> {
     this.state.inspectionCleared = false;
     const lot = LOTS.find((l) => l.id === job.lotId);
     this.setAnnouncement(
-      `${player.name} accepted: ${job.title}. Walk into the orange door at ${lot?.name ?? job.lotId} (or press E).`,
+      `${player.name} accepted: ${job.title}. Look for the JOB sign at ${lot?.name ?? job.lotId}, then press E to enter.`,
     );
   }
 
@@ -767,7 +808,7 @@ export class ValleyRoom extends Room<ValleyState> {
     this.centerSoul(player);
     if (player.hp <= 0) player.hp = player.maxHp;
     this.setAnnouncement(
-      `${player.name} joined the fight! HP ${player.hp}/${player.maxHp} — SPACE to FIGHT, then dodge.`,
+      `${player.name} joined the fight! HP ${player.hp}/${player.maxHp} — SPACE fight OR C coffee (one), then dodge.`,
     );
     this.broadcast('enterInspection', { jobId: job.id });
   }
@@ -834,14 +875,23 @@ export class ValleyRoom extends Room<ValleyState> {
     this.state.bullets.clear();
     this.state.jobsCompleted.set(job.id, true);
     this.state.availableJobs.delete(job.id);
+    // Completing a floor opens the next Big House job.
+    if (job.isBigHouse && job.houseFloor) {
+      this.state.houseFloorUnlocked = Math.max(this.state.houseFloorUnlocked, job.houseFloor + 1);
+    } else {
+      this.state.houseFloorUnlocked = Math.max(this.state.houseFloorUnlocked, 1);
+    }
     this.refreshJobs();
+    this.addItem(COFFEE_ITEM_ID, 1);
+    const cups = this.getItemQty(COFFEE_ITEM_ID);
     if (job.id === 'job_big_attic') {
-      this.state.questCompleted.set('quest_attic_clear', true);
       this.state.festivalDone = true;
-      this.setAnnouncement('ATTIC CLEAR! Housewarming Festival unlocked!');
+      this.setAnnouncement(`ATTIC CLEAR! +1 coffee (×${cups}). Housewarming Festival unlocked!`);
       this.broadcast('festival', {});
     } else {
-      this.setAnnouncement(`Report submitted: ${job.title}. +$${job.payout}, +${job.reputation} rep.`);
+      this.setAnnouncement(
+        `Report submitted: ${job.title}. +$${job.payout}, +${job.reputation} rep, +1 coffee (×${cups}).`,
+      );
     }
     this.state.activeJobId = '';
     this.state.acceptedBy = '';
@@ -852,10 +902,10 @@ export class ValleyRoom extends Room<ValleyState> {
   }
 
   private checkFestival() {
-    const required = QUESTS.filter((q) => q.required);
-    const done = required.every((q) => this.state.questCompleted.get(q.id));
-    if (done && this.state.festivalDone) {
-      this.setAnnouncement('ValuePro Valley Grand Reopening! The Big House is alive again.');
+    const allDone = JOBS.every((j) => this.state.jobsCompleted.get(j.id));
+    if (allDone || this.state.festivalDone) {
+      this.state.festivalDone = true;
+      this.setAnnouncement('ValuePro Valley Grand Reopening! Every job is cleared.');
     }
   }
 
@@ -884,9 +934,9 @@ export class ValleyRoom extends Room<ValleyState> {
     this.state.bullets.clear();
     this.state.activeJobId = '';
     this.state.battlePhase = 'player_turn';
-    // Restock a few gifts each morning
-    this.addItem('coffee', 1);
-    this.addItem('turnip', 1);
+    // Restock a couple of desk gifts + a coffee each morning
+    this.state.giftSlots.slice(0, 2).forEach((id) => this.addItem(id, 1));
+    this.addItem(COFFEE_ITEM_ID, 1);
     this.refreshJobs();
     this.setAnnouncement(`Dawn of day ${this.state.day}. New jobs posted.`);
     this.broadcast('dayAdvanced', { day: this.state.day });
@@ -919,22 +969,25 @@ export class ValleyRoom extends Room<ValleyState> {
     const m = living[this.patternCursor++ % living.length];
     const def = MONSTERS[m.monsterType as MonsterType];
     const dmg = def?.damage ?? 1;
-    const laneWidth = box.w / 4;
-    const columnNames = ['far left', 'left-centre', 'right-centre', 'far right'];
-    const rowNames = ['top', 'upper-middle', 'lower-middle', 'bottom'];
+    this.state.dodgeHint = 'DODGE!';
+    // Reshuffle the gap each wave so players can't memorize "the open lane".
+    this.safeLane = Math.floor(Math.random() * 4);
 
     switch (m.monsterType) {
-        case MonsterType.SpreadsheetSlime: {
-          this.state.dodgeHint = `SLIME — ${columnNames[this.safeLane]} column is open`;
-          for (let lane = 0; lane < 4; lane++) {
-            if (lane === this.safeLane) continue;
-            const x = box.x + laneWidth * (lane + 0.5);
-            this.spawnBullet(x, box.y - 10, 0, 82, 8, dmg);
+        case MonsterType.TicketTick: {
+          // Fast diagonal shards — no telegraph.
+          if (focus) {
+            for (let i = -1; i <= 1; i++) {
+              const sx = box.x + box.w * (0.25 + Math.random() * 0.5);
+              const sy = box.y - 14;
+              const ang = Math.atan2(focus.y - sy, focus.x - sx) + i * 0.22;
+              const spd = 118;
+              this.spawnBullet(sx, sy, Math.cos(ang) * spd, Math.sin(ang) * spd, 7, dmg);
+            }
           }
           break;
         }
         case MonsterType.ScopeCreepBat: {
-          this.state.dodgeHint = `BAT — ${rowNames[this.safeLane]} row is open`;
           const rowHeight = box.h / 4;
           const fromLeft = this.patternCursor % 2 === 0;
           for (let row = 0; row < 4; row++) {
@@ -943,7 +996,7 @@ export class ValleyRoom extends Room<ValleyState> {
             this.spawnBullet(
               fromLeft ? box.x - 10 : box.x + box.w + 10,
               y,
-              fromLeft ? 105 : -105,
+              fromLeft ? 130 : -130,
               0,
               7,
               dmg,
@@ -952,35 +1005,33 @@ export class ValleyRoom extends Room<ValleyState> {
           break;
         }
         case MonsterType.LegacyBugBeetle: {
-          this.state.dodgeHint = 'BEETLE — keep moving; shots aim at your old position';
           if (focus) {
-            for (let i = -1; i <= 1; i += 2) {
-              const sx = box.x + box.w / 2 + i * 12;
+            for (let i = -1; i <= 1; i++) {
+              const sx = box.x + box.w / 2 + i * 18;
               const sy = box.y - 12;
-              const ang = Math.atan2(focus.y - sy, focus.x - sx) + i * 0.1;
-              const spd = 88;
-              this.spawnBullet(sx, sy, Math.cos(ang) * spd, Math.sin(ang) * spd, 7, dmg);
+              const ang = Math.atan2(focus.y - sy, focus.x - sx) + i * 0.08;
+              const spd = 108;
+              this.spawnBullet(sx, sy, Math.cos(ang) * spd, Math.sin(ang) * spd, 8, dmg);
             }
           }
           break;
         }
         case MonsterType.AtticBoss: {
-          this.state.dodgeHint = 'BOSS — escape through the missing part of the ring';
           const cx = box.x + box.w / 2;
           const cy = box.y + box.h / 2;
-          const n = 12;
+          const n = 14;
           const gapStart = this.safeLane * 3;
           const radius = Math.min(box.w, box.h) / 2 - 8;
           for (let i = 0; i < n; i++) {
-            if (i === gapStart || i === (gapStart + 1) % n || i === (gapStart + 2) % n) continue;
+            if (i === gapStart || i === (gapStart + 1) % n) continue;
             const ang = (i / n) * Math.PI * 2;
             const sx = cx + Math.cos(ang) * radius;
             const sy = cy + Math.sin(ang) * radius;
             this.spawnBullet(
               sx,
               sy,
-              -Math.cos(ang) * 58,
-              -Math.sin(ang) * 58,
+              -Math.cos(ang) * 72,
+              -Math.sin(ang) * 72,
               8,
               dmg,
             );
@@ -988,8 +1039,7 @@ export class ValleyRoom extends Room<ValleyState> {
           break;
         }
         default: {
-          this.state.dodgeHint = 'Move away from the falling shot';
-          this.spawnBullet(box.x + box.w / 2, box.y - 8, 0, 82, 7, dmg);
+          this.spawnBullet(box.x + box.w / 2, box.y - 8, 0, 100, 7, dmg);
         }
     }
   }
@@ -1010,7 +1060,7 @@ export class ValleyRoom extends Room<ValleyState> {
 
     this.spawnAcc += dt;
     const livingCount = [...this.state.monsters.values()].filter((m) => m.hp > 0).length;
-    const interval = livingCount >= 4 ? 0.62 : livingCount >= 2 ? 0.72 : 0.82;
+    const interval = livingCount >= 4 ? 0.42 : livingCount >= 2 ? 0.52 : 0.62;
     if (this.spawnAcc >= interval) {
       this.spawnAcc = 0;
       this.spawnBulletWave();

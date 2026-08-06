@@ -1,5 +1,12 @@
-Enemy sprites (FREE packs):
-- Dark Fantasy Enemies FREE — Bat with VFX
-- Flying Forest Enemies FREE — Enemy3 (movement-in-animation, with hit VFX)
+Enemy sprites (FREE packs from MonoPixelArt):
 
-Used for ValuePro Valley inspection combat idle / attack / hurt animations.
+- Dark Fantasy Enemies FREE — Bat with VFX only
+  → Scope-Creep Bat (idle / hurt / Attack1 bite)
+
+- Flying Forest Enemies FREE — Enemy3 only
+  → Ticket Tick (Fly idle, teal tint)
+  → Legacy-Bug Beetle (Idle, brown tint)
+  → Attic Boss (Idle, red tint, large)
+
+FREE samples do NOT include Ghost Warrior, Evil Creature, or Forest Enemy1/2.
+Those are in the paid packs — drop the PREMIUM zips in Downloads and we can wire them.

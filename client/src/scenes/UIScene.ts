@@ -1,21 +1,20 @@
 import Phaser from 'phaser';
-import { JOBS, MAX_HEARTS, NPCS, QUESTS } from '@shared/index';
+import { GIFT_ITEMS, JOBS, MAX_HEARTS, NPCS } from '@shared/index';
 import { getRoom, getSessionId, sendInput } from '../net';
-import { GIFT_ITEMS } from './TownScene';
+import { hotbarGifts } from './TownScene';
 import { px, pxTitle } from '../ui/font';
 
-const STATUS_PANEL = { w: 276, h: 166 };
+const STATUS_PANEL = { w: 276, h: 188 };
+const INVENTORY = { slotW: 96, slotCount: 6, barH: 98, bottomPad: 18 };
+const NOTICE = { h: 132, gapAboveInventory: 28 };
 const SLOT_IDLE_FILL = 0xffd783;
 const SLOT_IDLE_STROKE = 0xa85b33;
 const SLOT_ACTIVE_FILL = 0xfff3c9;
 const SLOT_ACTIVE_STROKE = 0x4e8d43;
 
-const GIFT_LABELS: Record<string, string> = {
-  coffee: 'COFFEE',
-  turnip: 'TURNIP',
-  coffee_bean: 'BEANS',
-  sticky_note_flower: 'FLOWER',
-};
+function slotLabel(id: string) {
+  return GIFT_ITEMS[id]?.label || id.replaceAll('_', ' ').toUpperCase();
+}
 
 export class UIScene extends Phaser.Scene {
   private statusPanel!: Phaser.GameObjects.Container;
@@ -35,9 +34,8 @@ export class UIScene extends Phaser.Scene {
   private panelText!: Phaser.GameObjects.Text;
   private jobBoardObjects: Phaser.GameObjects.GameObject[] = [];
   private selectedJobIndex = 0;
-  private panelMode: 'none' | 'jobs' | 'quests' | 'hearts' = 'none';
-  private tool = 'sword';
-  private giftItem = 'coffee';
+  private panelMode: 'none' | 'jobs' | 'hearts' | 'progress' = 'none';
+  private giftItem = '';
   private festivalOverlay?: Phaser.GameObjects.Container;
   private sleepOverlay?: Phaser.GameObjects.Container;
   private sleepOverlayBg?: Phaser.GameObjects.Rectangle;
@@ -70,8 +68,12 @@ export class UIScene extends Phaser.Scene {
       .setVisible(false);
 
     this.input.keyboard!.on('keydown-J', () => this.togglePanel('jobs'));
-    this.input.keyboard!.on('keydown-Q', () => this.togglePanel('quests'));
-    this.input.keyboard!.on('keydown-C', () => this.togglePanel('hearts'));
+    this.input.keyboard!.on('keydown-Q', () => this.togglePanel('progress'));
+    this.input.keyboard!.on('keydown-C', () => {
+      const me = getRoom()?.state?.players?.get?.(getSessionId());
+      if (me?.inInspection) return; // C drinks coffee in battle
+      this.togglePanel('hearts');
+    });
     this.input.keyboard!.on('keydown-ESC', () => {
       this.panelMode = 'none';
       this.panel.setVisible(false);
@@ -90,8 +92,7 @@ export class UIScene extends Phaser.Scene {
       if (this.panelMode === 'jobs') this.acceptJobIndex(3);
     });
 
-    this.game.events.on('hud', (data: { tool?: string; giftItem?: string }) => {
-      if (data.tool) this.tool = data.tool;
+    this.game.events.on('hud', (data: { giftItem?: string }) => {
       if (data.giftItem) this.giftItem = data.giftItem;
       this.refreshHud();
     });
@@ -103,7 +104,8 @@ export class UIScene extends Phaser.Scene {
 
     const room = getRoom();
     room?.onMessage('dialogue', (data: { name: string; text: string; hearts: number }) => {
-      this.showNotice(data.name, `${data.text}\n♥ Friendship: ${data.hearts}/${MAX_HEARTS}`, 6500);
+      const shown = Math.floor(Number(data.hearts) || 0);
+      this.showNotice(data.name, `${data.text}\n♥ Friendship: ${shown}/${MAX_HEARTS}`, 6500);
     });
     room?.onMessage('notification', (data: { title: string; text: string }) => {
       this.showNotice(data.title, data.text, 5000);
@@ -117,8 +119,7 @@ export class UIScene extends Phaser.Scene {
         size.width - STATUS_PANEL.w / 2 - 24,
         STATUS_PANEL.h / 2 + 22,
       );
-      this.inventoryBar.setPosition(size.width / 2, size.height - 62);
-      this.noticePanel.setPosition(size.width / 2, size.height - 184);
+      this.layoutBottomHud(size.width, size.height);
       this.panel.setPosition(size.width / 2, size.height / 2);
       this.sleepOverlay?.setPosition(size.width / 2, size.height / 2);
       this.sleepOverlayBg?.setSize(size.width, size.height);
@@ -156,10 +157,10 @@ export class UIScene extends Phaser.Scene {
   }
 
   private createInventoryBar() {
-    const slotWidth = 96;
-    const slotCount = 6;
+    const slotWidth = INVENTORY.slotW;
+    const slotCount = INVENTORY.slotCount;
     const barWidth = slotWidth * slotCount + 24;
-    const barHeight = 98;
+    const barHeight = INVENTORY.barH;
     const shadow = this.add.rectangle(6, 8, barWidth, barHeight, 0x3c1d18);
     const bg = this.add
       .rectangle(0, 0, barWidth, barHeight, 0xefb45f)
@@ -184,25 +185,25 @@ export class UIScene extends Phaser.Scene {
       this.inventorySlots.push(text);
     }
     this.inventoryBar = this.add
-      .container(this.scale.width / 2, this.scale.height - 62, children)
+      .container(this.scale.width / 2, this.scale.height - INVENTORY.barH / 2 - INVENTORY.bottomPad, children)
       .setScrollFactor(0)
       .setDepth(1000);
   }
 
   private createNoticePanel() {
-    const width = Math.min(620, this.scale.width - 64);
-    const shadow = this.add.rectangle(6, 8, width, 132, 0x241612, 0.8);
-    const bg = this.add.rectangle(0, 0, width, 132, 0xf4c77d).setStrokeStyle(7, 0x713b26);
-    const inner = this.add.rectangle(0, 0, width - 18, 114).setStrokeStyle(2, 0xffe4a3);
-    const ribbon = this.add.rectangle(0, -66, 210, 34, 0xffd783).setStrokeStyle(4, 0x713b26);
-    this.noticeTitle = this.add.text(0, -66, 'VALLEY', pxTitle(12, '#713b26')).setOrigin(0.5);
-    this.noticeText = this.add.text(0, 5, '', px(16, '#4f2a20', {
+    const width = Math.min(560, this.scale.width - 120);
+    const shadow = this.add.rectangle(6, 8, width, NOTICE.h, 0x241612, 0.8);
+    const bg = this.add.rectangle(0, 0, width, NOTICE.h, 0xf4c77d).setStrokeStyle(7, 0x713b26);
+    const inner = this.add.rectangle(0, 0, width - 18, NOTICE.h - 18).setStrokeStyle(2, 0xffe4a3);
+    const ribbon = this.add.rectangle(0, -NOTICE.h / 2, 210, 34, 0xffd783).setStrokeStyle(4, 0x713b26);
+    this.noticeTitle = this.add.text(0, -NOTICE.h / 2, 'VALLEY', pxTitle(12, '#713b26')).setOrigin(0.5);
+    this.noticeText = this.add.text(0, 8, '', px(16, '#4f2a20', {
       align: 'center',
       wordWrap: { width: width - 64 },
       lineSpacing: 4,
     })).setOrigin(0.5);
     this.noticePanel = this.add
-      .container(this.scale.width / 2, this.scale.height - 184, [
+      .container(this.scale.width / 2, this.noticeY(this.scale.height, true), [
         shadow, bg, inner, ribbon, this.noticeTitle, this.noticeText,
       ])
       .setScrollFactor(0)
@@ -210,7 +211,35 @@ export class UIScene extends Phaser.Scene {
       .setVisible(false);
   }
 
+  /** Inventory sits on the bottom; notices float clear above it. */
+  private inventoryY(height: number) {
+    return height - INVENTORY.barH / 2 - INVENTORY.bottomPad;
+  }
+
+  private noticeY(height: number, inventoryVisible: boolean) {
+    if (!inventoryVisible) {
+      return height - NOTICE.h / 2 - 36;
+    }
+    const inventoryTop = this.inventoryY(height) - INVENTORY.barH / 2;
+    return inventoryTop - NOTICE.gapAboveInventory - NOTICE.h / 2;
+  }
+
+  private layoutBottomHud(width: number, height: number, inventoryVisible = true) {
+    this.inventoryBar.setPosition(width / 2, this.inventoryY(height));
+    this.noticePanel.setPosition(width / 2, this.noticeY(height, inventoryVisible));
+  }
+
   private showNotice(title: string, text: string, duration = 4500) {
+    const me = getRoom()?.state?.players?.get?.(getSessionId());
+    const inBattle = !!me?.inInspection;
+    if (inBattle) {
+      this.noticeTimer?.remove(false);
+      this.noticePanel.setVisible(false);
+      return;
+    }
+    const inventoryVisible = !inBattle;
+    this.layoutBottomHud(this.scale.width, this.scale.height, inventoryVisible);
+    this.noticePanel.setScale(1);
     this.noticeTitle.setText(title.toUpperCase());
     this.noticeText.setText(text.replaceAll('_', ' '));
     this.noticePanel.setVisible(true);
@@ -301,7 +330,7 @@ export class UIScene extends Phaser.Scene {
     }
   }
 
-  private togglePanel(mode: 'jobs' | 'quests' | 'hearts') {
+  private togglePanel(mode: 'jobs' | 'hearts' | 'progress') {
     if (this.panelMode === mode) {
       this.panelMode = 'none';
       this.panel.setVisible(false);
@@ -311,7 +340,7 @@ export class UIScene extends Phaser.Scene {
     this.openPanel(mode);
   }
 
-  private openPanel(mode: 'jobs' | 'quests' | 'hearts') {
+  private openPanel(mode: 'jobs' | 'hearts' | 'progress') {
     this.clearJobBoard();
     this.panelMode = mode;
     this.panel.setVisible(true);
@@ -338,17 +367,19 @@ export class UIScene extends Phaser.Scene {
     this.panelInner.setSize(442, 332);
     this.panelText.setPosition(-205, -152).setVisible(true);
 
-    if (this.panelMode === 'quests') {
-      text = 'QUEST LOG\n(hand in at noticeboard with E)\n\n';
-      for (const q of QUESTS) {
-        const done = !!state.questCompleted?.get?.(q.id);
-        const unlocked = !!state.questUnlocked?.get?.(q.id) || done;
-        const mark = done ? '[x]' : unlocked ? '[ ]' : '[?]';
-        text += `${mark} ${q.title}${q.required ? ' *' : ''}\n   ${q.description}\n\n`;
+    if (this.panelMode === 'progress') {
+      text = 'JOB PROGRESS\nFinish every Help Wanted job to reopen the valley.\n\n';
+      for (const job of JOBS) {
+        const done = !!state.jobsCompleted?.get?.(job.id);
+        const available = !!state.availableJobs?.get?.(job.id);
+        const active = state.activeJobId === job.id;
+        const mark = done ? '[x]' : active ? '[>]' : available ? '[ ]' : '[-]';
+        text += `${mark} ${job.title}${job.isBigHouse ? `  (floor ${job.houseFloor})` : ''}\n`;
       }
-      text += `House floors unlocked: ${state.houseFloorUnlocked}/4`;
+      const doneCount = JOBS.filter((j) => state.jobsCompleted?.get?.(j.id)).length;
+      text += `\n${doneCount}/${JOBS.length} cleared · Big House floor unlocked: ${state.houseFloorUnlocked}/4`;
     } else if (this.panelMode === 'hearts') {
-      text = 'FRIENDSHIP HEARTS\n(E talk · G gift · H cycle gift)\n\n';
+      text = 'FRIENDSHIP HEARTS\n(E talk · G gift · 1-6 / H pick item)\n\n';
       for (const npc of NPCS) {
         const h = state.hearts?.get?.(npc.id);
         const pts = h?.points ?? 0;
@@ -440,26 +471,37 @@ export class UIScene extends Phaser.Scene {
     const state = room?.state;
     const me = state?.players?.get?.(getSessionId());
     const code = state?.roomCode || room?.roomId || '—';
+    const inBattle = !!me?.inInspection;
+
     this.dayText.setText(`DAY ${state?.day ?? 1}  ·  ${code}`);
     this.statusText.setText([
       `COINS  ${me?.coins ?? 0}`,
       `REP    ${state?.reputation ?? 0}`,
       `HP     ${me?.hp ?? 10}/${me?.maxHp ?? 10}`,
+      `COFFEE ×${state?.inventory?.get?.('coffee')?.qty ?? 0}`,
     ].join('\n'));
 
-    const qty = (id: string) => state?.inventory?.get?.(id)?.qty ?? 0;
-    const selectedGift = GIFT_LABELS[this.giftItem] || 'GIFT';
-    const slots = [
-      'SWORD',
-      `GIFT\n${selectedGift}`,
-      ...GIFT_ITEMS.map((id) => `${GIFT_LABELS[id]}\n×${qty(id)}`),
-    ];
-    this.inventorySlots.forEach((slot, index) => slot.setText(slots[index] || ''));
+    this.inventoryBar.setVisible(!inBattle);
+    if (inBattle) {
+      this.noticeTimer?.remove(false);
+      this.noticePanel.setVisible(false);
+    }
+    this.layoutBottomHud(this.scale.width, this.scale.height, !inBattle);
 
-    const activeSlot =
-      this.tool === 'sword' ? 0 : 2 + Math.max(0, GIFT_ITEMS.indexOf(this.giftItem));
+    const qty = (id: string) => state?.inventory?.get?.(id)?.qty ?? 0;
+    const slots = hotbarGifts();
+    this.inventorySlots.forEach((slot, index) => {
+      const id = slots[index];
+      if (!id) {
+        slot.setText('');
+        return;
+      }
+      slot.setText(`${slotLabel(id)}\n×${qty(id)}`);
+    });
+
+    const activeSlot = Math.max(0, slots.indexOf(this.giftItem));
     this.inventorySlotBgs.forEach((slot, index) => {
-      const active = index === activeSlot || (this.tool === 'gift' && index === 1);
+      const active = index === activeSlot;
       slot.setFillStyle(active ? SLOT_ACTIVE_FILL : SLOT_IDLE_FILL);
       slot.setStrokeStyle(3, active ? SLOT_ACTIVE_STROKE : SLOT_IDLE_STROKE);
     });

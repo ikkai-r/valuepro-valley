@@ -1,4 +1,4 @@
-import { MapSchema, Schema, defineTypes } from '@colyseus/schema';
+import { ArraySchema, MapSchema, Schema, defineTypes } from '@colyseus/schema';
 
 export class PlayerState extends Schema {
   id = '';
@@ -125,6 +125,8 @@ export class ValleyState extends Schema {
   questUnlocked = new MapSchema<boolean>();
   availableJobs = new MapSchema<string>();
   jobsCompleted = new MapSchema<boolean>();
+  /** Randomized per room: which gift items fill hotbar slots 1-6. */
+  giftSlots = new ArraySchema<string>();
   activeJobId = '';
   acceptedBy = '';
   inspectionActive = false;
@@ -152,6 +154,7 @@ defineTypes(ValleyState, {
   questUnlocked: { map: 'boolean' },
   availableJobs: { map: 'string' },
   jobsCompleted: { map: 'boolean' },
+  giftSlots: { array: 'string' },
   activeJobId: 'string',
   acceptedBy: 'string',
   inspectionActive: 'boolean',

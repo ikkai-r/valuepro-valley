@@ -6,6 +6,9 @@ import { px, pxTitle } from '../ui/font';
 
 const FEMALE_COLORS = [0xec407a, 0xab47bc, 0x26a69a, 0xffa726];
 const MALE_COLORS = [0x42a5f5, 0x66bb6a, 0x8d6e63, 0x5c6bc0];
+const STAGE = { w: 960, h: 540 };
+/** Single band for enemies so nothing collides with the header or the arena. */
+const ENEMY_ROW_Y = 150;
 
 function playerColor(gender: string | undefined, colorIndex: number) {
   const palette = gender === 'male' ? MALE_COLORS : FEMALE_COLORS;
@@ -55,17 +58,18 @@ export class InspectionScene extends Phaser.Scene {
   create() {
     createEnemyAnimations(this);
     this.cameras.main.setBackgroundColor('#000000');
-    this.cameras.main.setBounds(0, 0, 640, 480);
     this.updateCameraZoom();
     this.scale.on('resize', this.updateCameraZoom, this);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.scale.off('resize', this.updateCameraZoom, this);
     });
 
-    this.add.rectangle(320, 240, 620, 440, 0x000000).setStrokeStyle(4, 0xffffff);
+    this.add
+      .rectangle(STAGE.w / 2, STAGE.h / 2, STAGE.w - 20, STAGE.h - 20, 0x000000)
+      .setStrokeStyle(4, 0xffffff);
 
-    this.title = this.add.text(320, 28, 'INSPECTION', pxTitle(14, '#ffffff')).setOrigin(0.5);
-    this.phaseText = this.add.text(320, 52, '', px(14, '#ffff00')).setOrigin(0.5);
+    this.title = this.add.text(STAGE.w / 2, 28, 'INSPECTION', pxTitle(14, '#ffffff')).setOrigin(0.5);
+    this.phaseText = this.add.text(STAGE.w / 2, 52, '', px(14, '#ffff00')).setOrigin(0.5);
 
     this.boxGfx = this.add.graphics();
     this.drawBattleBox();
@@ -76,9 +80,12 @@ export class InspectionScene extends Phaser.Scene {
       .setDepth(20);
 
     this.hpBarGfx = this.add.graphics().setDepth(30);
-    this.hpHud = this.add.text(40, 400, '', px(13, '#ffffff')).setDepth(31);
+    this.hpHud = this.add.text(40, 452, '', px(13, '#ffffff')).setDepth(31);
     this.hint = this.add
-      .text(320, 430, '', px(12, '#cfcfcf', { align: 'center', wordWrap: { width: 560 } }))
+      .text(STAGE.w / 2, 505, '', px(12, '#cfcfcf', {
+        align: 'center',
+        wordWrap: { width: 700 },
+      }))
       .setOrigin(0.5)
       .setDepth(31);
 
@@ -86,6 +93,7 @@ export class InspectionScene extends Phaser.Scene {
     this.wasd = this.input.keyboard!.addKeys('W,A,S,D') as typeof this.wasd;
 
     this.input.keyboard!.on('keydown-SPACE', () => sendInput({ type: 'attack' }));
+    this.input.keyboard!.on('keydown-C', () => sendInput({ type: 'drinkCoffee' }));
     this.input.keyboard!.on('keydown-E', () => sendInput({ type: 'submitReport' }));
     this.input.keyboard!.on('keydown-L', () => sendInput({ type: 'leaveInspection' }));
     this.input.keyboard!.on('keydown-X', () => sendInput({ type: 'leaveInspection' }));
@@ -96,10 +104,9 @@ export class InspectionScene extends Phaser.Scene {
   }
 
   private updateCameraZoom() {
-    const rawZoom = Math.min(this.scale.width / 680, this.scale.height / 520);
-    const zoom = Phaser.Math.Clamp(Math.round(rawZoom * 4) / 4, 1, 2.25);
+    const zoom = Math.min(this.scale.width / STAGE.w, this.scale.height / STAGE.h);
     this.cameras.main.setZoom(zoom);
-    this.cameras.main.centerOn(320, 240);
+    this.cameras.main.centerOn(STAGE.w / 2, STAGE.h / 2);
   }
 
   private drawBattleBox() {
@@ -125,19 +132,18 @@ export class InspectionScene extends Phaser.Scene {
       this.hint.setText('Press E to submit the report · L to leave');
     } else if (phase === 'player_turn') {
       this.phaseText.setText(`* YOUR TURN — FIGHT! (${remain}s)`);
-      this.hint.setText('SPACE = FIGHT   ·   L = flee');
+      const cups = room?.state?.inventory?.get?.('coffee')?.qty ?? 0;
+      this.hint.setText(`SPACE = fight OR C = coffee (+HP, ×${cups}) · one action · L = flee`);
     } else {
       this.phaseText.setText(`* DODGE! (${remain}s)`);
-      this.hint.setText(
-        `${state.dodgeHint || 'Watch for the open lane!'}\nWASD / arrows move your SOUL`,
-      );
+      this.hint.setText('WASD / arrows move your SOUL');
     }
 
     const me = state.players?.get?.(getSessionId());
     this.hpBarGfx.clear();
     if (me) {
       const ratio = me.maxHp > 0 ? me.hp / me.maxHp : 0;
-      drawBar(this.hpBarGfx, 40, 418, 140, 10, ratio, 0xffff00);
+      drawBar(this.hpBarGfx, 40, 472, 180, 10, ratio, 0xffff00);
       this.hpHud.setText(`HP  ${me.hp} / ${me.maxHp}`);
       if (me.inInspection) {
         this.soulLocal.setPosition(me.x, me.y);
@@ -171,20 +177,27 @@ export class InspectionScene extends Phaser.Scene {
           .setScale(visual.scale);
         if (visual.tint) body.setTint(visual.tint);
         body.play(visual.idle);
-        const label = this.add.text(0, -54, def?.name || '?', px(10, '#ffffff')).setOrigin(0.5);
+        const label = this.add.text(0, -66, def?.name || '?', px(10, '#ffffff')).setOrigin(0.5);
         const bar = this.add.graphics();
-        const hp = this.add.text(0, 48, '', px(10, '#ffaaaa')).setOrigin(0.5);
+        const hp = this.add.text(0, 52, '', px(9, '#ffaaaa')).setOrigin(0.5);
         c = this.add.container(0, 0, [body, label, bar, hp]);
         this.monsters.set(id, c);
         this.monsterModes.set(id, 'idle');
       }
 
+      // One row only; tighten spacing (and shrink sprites) as the party grows.
       const n = Math.max(1, living.length);
-      const spacing = m.monsterType === MonsterType.AtticBoss ? 120 : 90;
-      const x = 320 - ((n - 1) * spacing) / 2 + i * spacing;
-      c.setPosition(x, 96);
+      const spacingX = n <= 2 ? 190 : n === 3 ? 165 : n === 4 ? 145 : 126;
+      const x = STAGE.w / 2 - ((n - 1) * spacingX) / 2 + i * spacingX;
+      c.setPosition(x, ENEMY_ROW_Y);
 
       const body = c.getAt(0) as Phaser.GameObjects.Sprite;
+      const crowdScale = n >= 5 ? 0.8 : n === 4 ? 0.9 : 1;
+      body.setScale(visual.scale * crowdScale);
+
+      (c.getAt(1) as Phaser.GameObjects.Text).setVisible(n <= 3);
+      (c.getAt(1) as Phaser.GameObjects.Text).setText(def?.name || '?');
+      (c.getAt(3) as Phaser.GameObjects.Text).setText(`${Math.max(0, m.hp)}/${m.maxHp}`);
       const hurtUntil = m.hurtFlash || 0;
       const hurting = Date.now() < hurtUntil && m.hp > 0;
       const mode: 'idle' | 'hurt' | 'attack' = hurting

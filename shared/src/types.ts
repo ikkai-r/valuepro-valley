@@ -91,6 +91,7 @@ export type ClientMessage =
   | { type: 'enterInspection' }
   | { type: 'leaveInspection' }
   | { type: 'submitReport' }
+  | { type: 'drinkCoffee' }
   | { type: 'sleep' }
   | { type: 'wake' }
   | { type: 'completeQuest'; questId: string }

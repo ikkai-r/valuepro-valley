@@ -17,23 +17,31 @@ export interface EnemyVisual {
   attackLoop?: string;
 }
 
+/**
+ * FREE packs only include two creatures (Bat + Forest Enemy3).
+ * We stretch those into four looks with different sheets / tints / scales.
+ * Premium packs (Ghost Warrior, Evil Creature, Forest Enemy1/2) can slot in later.
+ */
 export const ENEMY_VISUALS: Record<MonsterType, EnemyVisual> = {
-  [MonsterType.ScopeCreepBat]: {
-    kind: 'bat',
-    scale: 1.6,
-    idle: 'bat_idle',
-    hurt: 'bat_hurt',
-    attack: 'bat_attack',
-  },
-  [MonsterType.SpreadsheetSlime]: {
+  // Forest Enemy3 — hover-fly loop, teal pest
+  [MonsterType.TicketTick]: {
     kind: 'forest',
-    scale: 1.45,
-    tint: 0x8bc34a,
-    idle: 'forest_idle',
+    scale: 1.25,
+    tint: 0x4dd0e1,
+    idle: 'forest_fly',
     hurt: 'forest_hurt',
     attack: 'forest_attack',
     attackLoop: 'forest_attack_loop',
   },
+  // Dark Fantasy Bat — bite attack
+  [MonsterType.ScopeCreepBat]: {
+    kind: 'bat',
+    scale: 1.7,
+    idle: 'bat_idle',
+    hurt: 'bat_hurt',
+    attack: 'bat_attack_bite',
+  },
+  // Forest Enemy3 — grounded idle, brown “beetle”
   [MonsterType.LegacyBugBeetle]: {
     kind: 'forest',
     scale: 1.55,
@@ -43,6 +51,7 @@ export const ENEMY_VISUALS: Record<MonsterType, EnemyVisual> = {
     attack: 'forest_attack',
     attackLoop: 'forest_attack_loop',
   },
+  // Forest Enemy3 — big red boss, alternate bat-style dive for variety
   [MonsterType.AtticBoss]: {
     kind: 'forest',
     scale: 2.35,
@@ -65,11 +74,19 @@ export function preloadEnemySheets(scene: Phaser.Scene) {
     frameWidth: fw,
     frameHeight: fh,
   });
-  scene.load.spritesheet('sheet_bat_attack', '/assets/enemies/bat/Bat-Attack2.png', {
+  scene.load.spritesheet('sheet_bat_attack1', '/assets/enemies/bat/Bat-Attack1.png', {
+    frameWidth: fw,
+    frameHeight: fh,
+  });
+  scene.load.spritesheet('sheet_bat_attack2', '/assets/enemies/bat/Bat-Attack2.png', {
     frameWidth: fw,
     frameHeight: fh,
   });
   scene.load.spritesheet('sheet_forest_idle', '/assets/enemies/forest/Enemy3-Idle.png', {
+    frameWidth: fw,
+    frameHeight: fh,
+  });
+  scene.load.spritesheet('sheet_forest_fly', '/assets/enemies/forest/Enemy3-Fly.png', {
     frameWidth: fw,
     frameHeight: fh,
   });
@@ -106,13 +123,15 @@ function ensureAnim(
 }
 
 export function createEnemyAnimations(scene: Phaser.Scene) {
-  // Bat IdleFly 576/64=9, Hurt 320/64=5, Attack2 704/64=11
+  // Bat: IdleFly 9, Hurt 5, Attack1 8, Attack2 11
   ensureAnim(scene, 'bat_idle', 'sheet_bat_idle', 9, 10, -1);
   ensureAnim(scene, 'bat_hurt', 'sheet_bat_hurt', 5, 14, 0);
-  ensureAnim(scene, 'bat_attack', 'sheet_bat_attack', 11, 14, 0);
+  ensureAnim(scene, 'bat_attack_bite', 'sheet_bat_attack1', 8, 14, 0);
+  ensureAnim(scene, 'bat_attack', 'sheet_bat_attack2', 11, 14, 0);
 
-  // Forest Idle 8, Hit 4, SmashStart 12, SmashLoop 3
+  // Forest: Idle 8, Fly 8, Hit 4, SmashStart 12, SmashLoop 3
   ensureAnim(scene, 'forest_idle', 'sheet_forest_idle', 8, 10, -1);
+  ensureAnim(scene, 'forest_fly', 'sheet_forest_fly', 8, 12, -1);
   ensureAnim(scene, 'forest_hurt', 'sheet_forest_hurt', 4, 14, 0);
   ensureAnim(scene, 'forest_attack', 'sheet_forest_attack', 12, 14, 0);
   ensureAnim(scene, 'forest_attack_loop', 'sheet_forest_attack_loop', 3, 12, -1);
