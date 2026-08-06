@@ -70,7 +70,7 @@ export class TownScene extends Phaser.Scene {
       .text(10 * TILE, 12.5 * TILE - 28, '', px(11, '#e3f2fd'))
       .setOrigin(0.5)
       .setDepth(201);
-    playCharacterAnim(this.localSprite, 'female', 'down', false);
+    playCharacterAnim(this.localSprite, 'female', 'down', false, 0);
     this.cameras.main.startFollow(this.localSprite, true, 0.12, 0.12);
 
     this.marker = this.add
@@ -376,7 +376,13 @@ export class TownScene extends Phaser.Scene {
             this.localSprite.setVisible(!p.sleeping);
             this.localLabel.setPosition(p.x, p.y - 28).setText(p.name).setDepth(101 + p.y);
             this.localLabel.setVisible(!p.sleeping);
-            playCharacterAnim(this.localSprite, p.gender, p.facing, moving && !p.sleeping);
+            playCharacterAnim(
+              this.localSprite,
+              p.gender,
+              p.facing,
+              moving && !p.sleeping,
+              p.colorIndex,
+            );
           } else {
             this.localSprite.setVisible(false);
             this.localLabel.setVisible(false);
@@ -394,7 +400,7 @@ export class TownScene extends Phaser.Scene {
           this.remoteSprites.set(id, c);
         }
         const body = c.getAt(0) as Phaser.GameObjects.Sprite;
-        playCharacterAnim(body, p.gender, p.facing, moving && !p.sleeping);
+        playCharacterAnim(body, p.gender, p.facing, moving && !p.sleeping, p.colorIndex);
         c.setPosition(p.x, p.y);
         c.setDepth(100 + p.y);
         c.setVisible(!p.inInspection && !p.sleeping);
