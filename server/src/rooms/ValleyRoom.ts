@@ -801,12 +801,13 @@ export class ValleyRoom extends Room<ValleyState> {
       this.setAnnouncement('Big House floor still locked. Clear earlier floors first!');
       return;
     }
+    // Jobs are shared — one accept sets the active job for the whole party.
     this.state.activeJobId = jobId;
     this.state.acceptedBy = player.id;
     this.state.inspectionCleared = false;
     const lot = LOTS.find((l) => l.id === job.lotId);
     this.setAnnouncement(
-      `${player.name} accepted: ${job.title}. Party: meet at the glowing door at ${lot?.name ?? job.lotId} and press E — one shared fight.`,
+      `Party accepted: ${job.title}. Meet at the glowing door at ${lot?.name ?? job.lotId} — anyone presses E and everyone enters.`,
     );
   }
 
@@ -827,14 +828,19 @@ export class ValleyRoom extends Room<ValleyState> {
       this.startPlayerTurn();
     }
 
-    player.inInspection = true;
-    player.actedThisTurn = this.state.battlePhase !== 'player_turn';
-    this.centerSoul(player);
-    if (player.hp <= 0) player.hp = player.maxHp;
-    const n = this.fighters().length;
+    // One door press pulls the whole party into the shared fight.
+    let pulled = 0;
+    this.state.players.forEach((p) => {
+      if (p.sleeping) p.sleeping = false;
+      p.inInspection = true;
+      p.actedThisTurn = this.state.battlePhase !== 'player_turn';
+      this.centerSoul(p);
+      if (p.hp <= 0) p.hp = p.maxHp;
+      pulled += 1;
+    });
     this.setAnnouncement(
-      n > 1
-        ? `${player.name} joined the party fight (${n} inside)! Shared monsters — each acts once, then dodge together.`
+      pulled > 1
+        ? `Party fight started (${pulled} inside)! Shared monsters — each acts once, then dodge together.`
         : `${player.name} entered the fight! HP ${player.hp}/${player.maxHp} — SPACE fight OR C coffee, then dodge.`,
     );
     this.broadcast('enterInspection', { jobId: job.id });

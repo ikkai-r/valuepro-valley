@@ -74,7 +74,7 @@ export class TownScene extends Phaser.Scene {
       .text(10 * TILE, 12.5 * TILE - 28, '', px(11, '#e3f2fd'))
       .setOrigin(0.5)
       .setDepth(201);
-    playCharacterAnim(this.localSprite, 'female', 'down', false, 0);
+    playCharacterAnim(this.localSprite, 'female', 'down', false);
     this.cameras.main.startFollow(this.localSprite, true, 0.12, 0.12);
 
     this.marker = this.add
@@ -458,7 +458,6 @@ export class TownScene extends Phaser.Scene {
         p: {
           gender?: string;
           facing?: string;
-          colorIndex: number;
           sleeping: boolean;
           inInspection: boolean;
         },
@@ -467,7 +466,7 @@ export class TownScene extends Phaser.Scene {
         const walking = this.isWalking(id) && !p.sleeping;
         if (id === getSessionId()) {
           if (!p.inInspection) {
-            playCharacterAnim(this.localSprite, p.gender, p.facing, walking, p.colorIndex);
+            playCharacterAnim(this.localSprite, p.gender, p.facing, walking);
           }
           return;
         }
@@ -478,7 +477,6 @@ export class TownScene extends Phaser.Scene {
           p.gender,
           p.facing,
           walking,
-          p.colorIndex,
         );
       },
     );
