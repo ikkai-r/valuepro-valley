@@ -882,8 +882,7 @@ export class ValleyRoom extends Room<ValleyState> {
         ? `Party fight started (${pulled} inside)! Shared monsters — each acts once, then dodge together.${skipped}`
         : `${player.name} entered the fight! HP ${player.hp}/${player.maxHp} — SPACE fight OR C coffee, then dodge.${skipped}`,
     );
-    // Message + schema so every client swaps to the battle screen immediately.
-    this.broadcast('enterInspection', { jobId: job.id });
+    // Clients switch scenes off the inInspection flag above — no extra message needed.
   }
 
   private spawnMonsters(job: (typeof JOBS)[0]) {
@@ -926,7 +925,6 @@ export class ValleyRoom extends Room<ValleyState> {
     } else {
       this.maybeEndPlayerTurn();
     }
-    this.broadcast('leaveInspection', {});
   }
 
   private submitReport(player: PlayerState) {
@@ -974,7 +972,6 @@ export class ValleyRoom extends Room<ValleyState> {
     this.state.inspectionCleared = false;
     this.state.battlePhase = 'player_turn';
     this.checkFestival();
-    this.broadcast('leaveInspection', {});
   }
 
   private checkFestival() {
@@ -1182,7 +1179,6 @@ export class ValleyRoom extends Room<ValleyState> {
       this.state.inspectionCleared = false;
       this.state.battlePhase = 'player_turn';
       this.setAnnouncement('* The party wiped. Job still on the board.');
-      this.broadcast('leaveInspection', { partyWipe: true });
     }
   }
 

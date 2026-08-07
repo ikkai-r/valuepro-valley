@@ -108,7 +108,13 @@ export class InspectionScene extends Phaser.Scene {
     this.input.keyboard!.on('keydown-X', () => sendInput({ type: 'leaveInspection' }));
 
     const room = getRoom();
-    room?.onStateChange(() => this.sync());
+    // Drop the listener on shutdown; a stale one would sync into destroyed objects
+    // and throw, which aborts the remaining handlers for that state patch.
+    const onState = () => this.sync();
+    room?.onStateChange(onState);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      room?.onStateChange.remove(onState);
+    });
     this.sync();
   }
 

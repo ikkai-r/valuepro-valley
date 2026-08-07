@@ -40,6 +40,7 @@ export class TownScene extends Phaser.Scene {
     S: Phaser.Input.Keyboard.Key;
     D: Phaser.Input.Keyboard.Key;
   };
+  private battleSceneOpen = false;
   private marker!: Phaser.GameObjects.Rectangle;
   private doorHint!: Phaser.GameObjects.Container;
   private doorHintText!: Phaser.GameObjects.Text;
@@ -138,38 +139,41 @@ export class TownScene extends Phaser.Scene {
       this.selectGift(slots[i]);
     });
 
-    room.onStateChange(() => {
+    const onState = () => {
       this.syncFromState();
       this.syncBattleScene();
-    });
+    };
+    room.onStateChange(onState);
     room.onMessage('festival', () => this.game.events.emit('festival'));
-    // Force every client into the shared fight — don't rely only on schema patches.
-    room.onMessage('enterInspection', () => this.enterBattleScene());
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      room.onStateChange.remove(onState);
+    });
 
+    this.battleSceneOpen = this.scene.isActive('Inspection');
     this.syncFromState();
     this.syncBattleScene();
     const firstSlot = hotbarGifts()[0];
     if (firstSlot) this.selectGift(firstSlot);
   }
 
-  /** Shared fight: open Inspection as soon as this client is flagged (or told) to enter. */
-  private enterBattleScene() {
-    if (this.scene.isActive('Inspection')) return;
-    this.scene.sleep('Town');
-    this.scene.launch('Inspection');
-  }
-
-  private leaveBattleScene() {
-    if (!this.scene.isActive('Inspection')) return;
-    this.scene.stop('Inspection');
-    this.scene.wake('Town');
-  }
-
+  /**
+   * `inInspection` is the single source of truth for the shared fight. Phaser queues
+   * scene ops until the next frame, so track our own intent — two patches in one
+   * frame would otherwise launch Inspection twice and tear down the fresh scene.
+   */
   private syncBattleScene() {
     const me = getRoom()?.state?.players?.get(getSessionId());
     if (!me) return;
-    if (me.inInspection) this.enterBattleScene();
-    else this.leaveBattleScene();
+    const wantBattle = !!me.inInspection;
+    if (wantBattle === this.battleSceneOpen) return;
+    this.battleSceneOpen = wantBattle;
+    if (wantBattle) {
+      this.scene.sleep('Town');
+      this.scene.launch('Inspection');
+    } else {
+      this.scene.stop('Inspection');
+      this.scene.wake('Town');
+    }
   }
 
   /** The highlighted slot is what G sends — nothing else to switch. */
