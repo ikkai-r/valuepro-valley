@@ -342,6 +342,7 @@ export class ValleyRoom extends Room<ValleyState> {
 
   private movePlayer(player: PlayerState, dx: number, dy: number) {
     if (player.sleeping) return;
+    if (player.inInspection && player.hp <= 0) return;
     const len = Math.hypot(dx, dy) || 1;
     const nx = dx / len;
     const ny = dy / len;
@@ -470,7 +471,7 @@ export class ValleyRoom extends Room<ValleyState> {
   }
 
   private attack(player: PlayerState) {
-    if (!player.inInspection || player.sleeping) return;
+    if (!player.inInspection || player.sleeping || player.hp <= 0) return;
     if (this.state.battlePhase !== 'player_turn' || this.state.inspectionCleared) return;
     if (player.actedThisTurn) {
       this.clientSend(player.id, 'notification', {
@@ -755,7 +756,7 @@ export class ValleyRoom extends Room<ValleyState> {
   }
 
   private drinkCoffee(player: PlayerState) {
-    if (!player.inInspection || player.sleeping) return;
+    if (!player.inInspection || player.sleeping || player.hp <= 0) return;
     if (this.state.battlePhase !== 'player_turn' || this.state.inspectionCleared) {
       this.clientSend(player.id, 'notification', {
         title: 'Coffee',
@@ -1142,12 +1143,10 @@ export class ValleyRoom extends Room<ValleyState> {
           this.setAnnouncement(`* Ow! ${p.name} HP ${p.hp}/${p.maxHp}`);
           toDelete.push(b.id);
           if (p.hp <= 0) {
-            p.inInspection = false;
-            p.actedThisTurn = false;
-            p.x = 10 * TILE;
-            p.y = 12.5 * TILE;
-            this.setAnnouncement(`* ${p.name} was defeated! Sleep to recover.`);
-            this.broadcast('leaveInspection', { sessionId: p.id });
+            // Keep defeated members in the battle as spectators until the
+            // entire party wipes. fighters() excludes them from turn waiting.
+            p.actedThisTurn = true;
+            this.setAnnouncement(`* ${p.name} was defeated! The party fights on.`);
             this.maybeEndPlayerTurn();
           }
         }
@@ -1155,17 +1154,22 @@ export class ValleyRoom extends Room<ValleyState> {
     });
     for (const id of toDelete) this.state.bullets.delete(id);
 
-    // If everyone knocked out, end battle without reward
-    let anyInside = false;
-    this.state.players.forEach((p) => {
-      if (p.inInspection) anyInside = true;
-    });
-    if (!anyInside) {
+    // Only exit the battle once every party member has been knocked out.
+    const party = [...this.state.players.values()].filter((p) => p.inInspection);
+    if (party.length > 0 && party.every((p) => p.hp <= 0)) {
+      party.forEach((p) => {
+        p.inInspection = false;
+        p.actedThisTurn = false;
+        p.x = 10 * TILE;
+        p.y = 12.5 * TILE;
+      });
       this.state.inspectionActive = false;
       this.state.monsters.clear();
       this.state.bullets.clear();
       this.state.inspectionCleared = false;
+      this.state.battlePhase = 'player_turn';
       this.setAnnouncement('* The party wiped. Job still on the board.');
+      this.broadcast('leaveInspection', { partyWipe: true });
     }
   }
 

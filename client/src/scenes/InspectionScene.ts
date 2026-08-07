@@ -178,7 +178,7 @@ export class InspectionScene extends Phaser.Scene {
       (p: { inInspection: boolean; name: string; hp: number }) => {
         if (!p.inInspection) return;
         partyCount += 1;
-        partyNames.push(p.name);
+        partyNames.push(p.hp <= 0 ? `${p.name} · KO` : p.name);
       },
     );
     this.partyHud.setText(
@@ -191,8 +191,17 @@ export class InspectionScene extends Phaser.Scene {
       if (me.inInspection) {
         this.soulLocal.setPosition(me.x, me.y);
         this.soulLocal.setVisible(true);
-        this.soulLabel.setText(me.name || 'YOU').setPosition(me.x, me.y - 18).setVisible(true);
-        if (phase === 'enemy_turn') {
+        const defeated = me.hp <= 0;
+        this.soulLabel
+          .setText(defeated ? `${me.name || 'YOU'} · KO` : me.name || 'YOU')
+          .setPosition(me.x, me.y - 18)
+          .setVisible(true);
+        this.soulLocal.setAlpha(defeated ? 0.4 : 1);
+        this.soulLabel.setAlpha(defeated ? 0.65 : 1);
+        if (defeated) {
+          this.soulLocal.setFillStyle(0x555555);
+          this.hint.setText('KO · Watching the party — you return together after a win or full wipe');
+        } else if (phase === 'enemy_turn') {
           this.soulLocal.setFillStyle(0xff0000);
         } else if (me.actedThisTurn) {
           this.soulLocal.setFillStyle(0x888888);
@@ -331,12 +340,19 @@ export class InspectionScene extends Phaser.Scene {
         }
         c.setPosition(p.x, p.y);
         c.setVisible(true);
+        const defeated = p.hp <= 0;
         const acted = !!(p as { actedThisTurn?: boolean }).actedThisTurn;
         const phaseNow = state.battlePhase || 'player_turn';
-        const mark = phaseNow === 'player_turn' && acted ? ' ✓' : '';
-        (c.getAt(1) as Phaser.GameObjects.Text).setText(`${p.name}${mark}`);
-        (c.getAt(0) as Phaser.GameObjects.Polygon).setFillStyle(
-          phaseNow === 'enemy_turn'
+        const mark = defeated ? ' · KO' : phaseNow === 'player_turn' && acted ? ' ✓' : '';
+        (c.getAt(1) as Phaser.GameObjects.Text)
+          .setText(`${p.name}${mark}`)
+          .setAlpha(defeated ? 0.65 : 1);
+        (c.getAt(0) as Phaser.GameObjects.Polygon)
+          .setAlpha(defeated ? 0.4 : 1)
+          .setFillStyle(
+          defeated
+            ? 0x555555
+            : phaseNow === 'enemy_turn'
             ? playerColor(p.gender, p.colorIndex)
             : acted
               ? 0x888888
@@ -407,7 +423,7 @@ export class InspectionScene extends Phaser.Scene {
       },
     );
 
-    if (!me?.inInspection) return;
+    if (!me?.inInspection || me.hp <= 0) return;
     if (room?.state.battlePhase !== 'enemy_turn') return;
 
     let dx = 0;
