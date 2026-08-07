@@ -214,14 +214,14 @@ export class MenuScene extends Phaser.Scene {
         number: '2',
         badge: 'JOB',
         heading: 'HELP WANTED',
-        detail: 'Accept a job, glowing door + E. Party shares one fight — everyone acts, then dodge together.',
+        detail: 'Accept a job, then press E at the glowing door.',
         accent: 0xc97843,
       },
       {
         number: '3',
         badge: 'FIGHT',
         heading: 'PARTY TURNS',
-        detail: 'Each fighter: SPACE or C once. When all ready (or timer), shared dodge with WASD.',
+        detail: 'One shared fight: SPACE or C once each, then dodge with WASD.',
         accent: 0xa84232,
       },
     ];
@@ -270,15 +270,16 @@ export class MenuScene extends Phaser.Scene {
       this.add.text(cardX + 10, cardTop + 19, step.badge, pxTitle(11, '#fff8d5'))
         .setOrigin(0.5)
         .setDepth(7);
-      this.add.text(cardX, cardTop + 57, step.heading, pxTitle(10, '#6b3024'))
-        .setOrigin(0.5)
+      this.add.text(cardX, cardTop + 52, step.heading, pxTitle(10, '#6b3024'))
+        .setOrigin(0.5, 0)
         .setDepth(7);
-      this.add.text(cardX, cardTop + 94, step.detail, px(17, '#5b2d1f', {
+      // Top-anchored so longer copy grows downward instead of into the heading.
+      this.add.text(cardX, cardTop + 74, step.detail, px(15, '#5b2d1f', {
         align: 'center',
-        wordWrap: { width: cardWidth - 28 },
-        lineSpacing: 3,
+        wordWrap: { width: cardWidth - 26 },
+        lineSpacing: 2,
       }))
-        .setOrigin(0.5)
+        .setOrigin(0.5, 0)
         .setDepth(7);
     });
 
