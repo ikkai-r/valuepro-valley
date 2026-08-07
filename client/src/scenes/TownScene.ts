@@ -448,6 +448,7 @@ export class TownScene extends Phaser.Scene {
       const dy = lot.y + lot.h + 10;
       const me = state.players?.get?.(getSessionId());
       const nearDoor = !!me && Phaser.Math.Distance.Between(me.x, me.y, dx, dy) <= 44;
+      this.doorHintText.setText((me?.hp ?? 1) <= 0 ? 'SLEEP FIRST' : 'E ENTER');
       this.doorHintText.setVisible(nearDoor);
       this.doorHint.setPosition(dx, dy).setVisible(true);
     } else {

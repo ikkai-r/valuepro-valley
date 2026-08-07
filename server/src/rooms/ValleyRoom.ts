@@ -834,6 +834,16 @@ export class ValleyRoom extends Room<ValleyState> {
     const job = JOBS.find((j) => j.id === this.state.activeJobId);
     if (!job) return;
 
+    // Knocked out means no fighting — rest first, HP is only restored by sleeping.
+    if (player.hp <= 0) {
+      this.clientSend(player.id, 'notification', {
+        title: 'Knocked out',
+        text: '* You have 0 HP. Go to your bunk and press E or B to sleep and recover.',
+      });
+      this.setAnnouncement(`${player.name} is knocked out — sleep in a bunk to recover.`);
+      return;
+    }
+
     if (!this.state.inspectionActive) {
       this.state.inspectionActive = true;
       this.state.inspectionCleared = false;
@@ -843,20 +853,26 @@ export class ValleyRoom extends Room<ValleyState> {
       this.startPlayerTurn();
     }
 
-    // One door press pulls the whole party into the shared fight.
+    // One door press pulls the whole party into the shared fight — minus anyone
+    // who is knocked out, since entering never heals.
     let pulled = 0;
+    let resting = 0;
     for (const p of this.state.players.values()) {
+      if (p.hp <= 0) {
+        resting += 1;
+        continue;
+      }
       if (p.sleeping) p.sleeping = false;
       p.inInspection = true;
       p.actedThisTurn = this.state.battlePhase !== 'player_turn';
-      if (p.hp <= 0) p.hp = p.maxHp;
       pulled += 1;
     }
     this.resetSouls();
+    const skipped = resting > 0 ? ` ${resting} knocked out — they must sleep first.` : '';
     this.setAnnouncement(
       pulled > 1
-        ? `Party fight started (${pulled} inside)! Shared monsters — each acts once, then dodge together.`
-        : `${player.name} entered the fight! HP ${player.hp}/${player.maxHp} — SPACE fight OR C coffee, then dodge.`,
+        ? `Party fight started (${pulled} inside)! Shared monsters — each acts once, then dodge together.${skipped}`
+        : `${player.name} entered the fight! HP ${player.hp}/${player.maxHp} — SPACE fight OR C coffee, then dodge.${skipped}`,
     );
     // Message + schema so every client swaps to the battle screen immediately.
     this.broadcast('enterInspection', { jobId: job.id });
