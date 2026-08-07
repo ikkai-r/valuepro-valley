@@ -489,7 +489,7 @@ export class UIScene extends Phaser.Scene {
     list.setPosition(0, viewportTop - this.heartsScrollY);
 
     // Geometry masks use world space; list is a child of the centered panel.
-    const maskGfx = this.make.graphics({ add: false });
+    const maskGfx = this.make.graphics({ x: 0, y: 0 }, false);
     maskGfx.fillStyle(0xffffff);
     maskGfx.fillRect(
       this.panel.x - viewportW / 2,
