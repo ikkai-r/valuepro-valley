@@ -113,6 +113,14 @@ export class UIScene extends Phaser.Scene {
     room?.onMessage('openJobs', () => this.openPanel('jobs'));
     room?.onMessage('sleepStarted', (data: { day: number }) => this.showSleepTransition(data.day));
     room?.onMessage('dayAdvanced', (data: { day: number }) => this.finishSleepTransition(data.day));
+    // Backup: UI never sleeps, so force the battle screen even if Town missed the message.
+    room?.onMessage('enterInspection', () => {
+      if (this.scene.isActive('Inspection')) return;
+      if (this.scene.isActive('Town') || this.scene.isSleeping('Town')) {
+        this.scene.sleep('Town');
+        this.scene.launch('Inspection');
+      }
+    });
 
     this.scale.on('resize', (size: Phaser.Structs.Size) => {
       this.statusPanel.setPosition(
