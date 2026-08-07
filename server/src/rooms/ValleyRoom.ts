@@ -177,13 +177,21 @@ export class ValleyRoom extends Room<ValleyState> {
       this.setAnnouncement('Stand next to your bunk to rest (E or B).');
       return;
     }
-    player.sleeping = true;
-    player.x = bunk.x;
-    player.y = bunk.y;
-    player.hp = player.maxHp;
-    this.clientSend(player.id, 'sleepStarted', { day: this.state.day });
-    this.setAnnouncement(`${player.name} is resting in bunk ${player.bedSlot + 1}. HP restored.`);
-    this.tryAdvanceDay();
+    // Rest is shared: one player choosing sleep sends the whole room to bed.
+    this.state.players.forEach((p) => {
+      p.sleeping = true;
+      p.inInspection = false;
+      p.actedThisTurn = false;
+      p.hp = p.maxHp;
+      const assignedBunk = this.playerBed(p);
+      if (assignedBunk) {
+        p.x = assignedBunk.x;
+        p.y = assignedBunk.y;
+      }
+    });
+    this.setAnnouncement(`${player.name} called it a day. The whole party is resting.`);
+    this.broadcast('sleepStarted', { day: this.state.day });
+    this.advanceDay();
   }
 
   onDispose() {
@@ -613,7 +621,7 @@ export class ValleyRoom extends Room<ValleyState> {
     // Job doors first
     if (this.tryEnterJobDoor(player)) return;
 
-    // Your bunk — rest / majority day vote
+    // Your bunk — one player resting advances the whole party's day
     const bunk = this.playerBed(player);
     if (bunk && near(player.x, player.y, bunk.x, bunk.y, 36)) {
       this.trySleep(player);
@@ -975,17 +983,6 @@ export class ValleyRoom extends Room<ValleyState> {
       this.state.festivalDone = true;
       this.setAnnouncement('ValuePro Valley Grand Reopening! Every job is cleared.');
     }
-  }
-
-  private tryAdvanceDay() {
-    const players = [...this.state.players.values()];
-    if (players.length === 0) return;
-    const sleeping = players.filter((p) => p.sleeping).length;
-    if (sleeping < Math.ceil(players.length / 2)) {
-      this.setAnnouncement(`Sleeping ${sleeping}/${players.length} — need majority to advance day.`);
-      return;
-    }
-    this.advanceDay();
   }
 
   private advanceDay() {

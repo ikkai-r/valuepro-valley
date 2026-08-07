@@ -61,7 +61,7 @@ Other hosts (`Dockerfile` / Fly / Railway) are also wired if you switch later. T
 | C | Friendship hearts (town) / drink coffee (your fight turn) |
 | G | Gift nearest NPC |
 | H | Cycle gift item |
-| B | Rest at bunk (majority advances day) |
+| B | Rest at bunk (the whole party sleeps and advances the day) |
 | L / X | Leave inspection |
 
 ## Layout
