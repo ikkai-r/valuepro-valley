@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { GIFT_ITEMS, JOBS, MAX_HEARTS, NPCS } from '@shared/index';
 import { getRoom, getSessionId, sendInput } from '../net';
+import { npcTextureKey } from '../npcs';
 import { hotbarGifts } from './TownScene';
 import { px, pxTitle } from '../ui/font';
 
@@ -42,6 +43,12 @@ export class UIScene extends Phaser.Scene {
   private sleepTitle?: Phaser.GameObjects.Text;
   private sleepBody?: Phaser.GameObjects.Text;
   private sleepStartedAt = 0;
+  private heartsScrollY = 0;
+  private heartsList?: Phaser.GameObjects.Container;
+  private heartsMaskGfx?: Phaser.GameObjects.Graphics;
+  private heartsMaxScroll = 0;
+  private heartsViewportTop = -118;
+  private heartsValueTexts: Phaser.GameObjects.Text[] = [];
 
   constructor() {
     super('UI');
@@ -79,6 +86,11 @@ export class UIScene extends Phaser.Scene {
       this.panel.setVisible(false);
       this.clearJobBoard();
     });
+    this.input.keyboard!.on('keydown-UP', () => this.scrollHearts(-48));
+    this.input.keyboard!.on('keydown-DOWN', () => this.scrollHearts(48));
+    this.input.on('wheel', (_p: unknown, _gos: unknown, _dx: number, dy: number) => {
+      if (this.panelMode === 'hearts') this.scrollHearts(dy * 0.45);
+    });
 
     // number keys 1-3 accept jobs when panel open
     this.input.keyboard!.on('keydown-ONE', () => this.acceptJobIndex(0));
@@ -98,7 +110,8 @@ export class UIScene extends Phaser.Scene {
     });
     this.game.events.on('state', () => {
       this.refreshHud();
-      if (this.panelMode !== 'none' && this.panelMode !== 'jobs') this.renderPanel();
+      if (this.panelMode === 'progress') this.renderPanel();
+      else if (this.panelMode === 'hearts') this.refreshHeartsValues();
     });
     this.game.events.on('festival', () => this.showFestival());
 
@@ -106,6 +119,7 @@ export class UIScene extends Phaser.Scene {
     room?.onMessage('dialogue', (data: { name: string; text: string; hearts: number }) => {
       const shown = Math.floor(Number(data.hearts) || 0);
       this.showNotice(data.name, `${data.text}\n♥ Friendship: ${shown}/${MAX_HEARTS}`, 6500);
+      if (this.panelMode === 'hearts') this.refreshHeartsValues();
     });
     room?.onMessage('notification', (data: { title: string; text: string }) => {
       this.showNotice(data.title, data.text, 5000);
@@ -123,6 +137,7 @@ export class UIScene extends Phaser.Scene {
       this.panel.setPosition(size.width / 2, size.height / 2);
       this.sleepOverlay?.setPosition(size.width / 2, size.height / 2);
       this.sleepOverlayBg?.setSize(size.width, size.height);
+      if (this.panelMode === 'hearts') this.renderHeartsBoard();
     });
 
     this.refreshHud();
@@ -342,24 +357,52 @@ export class UIScene extends Phaser.Scene {
 
   private openPanel(mode: 'jobs' | 'hearts' | 'progress') {
     this.clearJobBoard();
+    if (mode === 'hearts') this.heartsScrollY = 0;
     this.panelMode = mode;
     this.panel.setVisible(true);
     this.renderPanel();
   }
 
   private clearJobBoard() {
+    this.heartsList?.clearMask(true);
     for (const object of this.jobBoardObjects) object.destroy();
     this.jobBoardObjects = [];
+    this.heartsList = undefined;
+    this.heartsMaskGfx = undefined;
+    this.heartsMaxScroll = 0;
+    this.heartsValueTexts = [];
+  }
+
+  private scrollHearts(delta: number) {
+    if (this.panelMode !== 'hearts' || !this.heartsList) return;
+    this.heartsScrollY = Phaser.Math.Clamp(this.heartsScrollY + delta, 0, this.heartsMaxScroll);
+    this.heartsList.setY(this.heartsViewportTop - this.heartsScrollY);
+  }
+
+  private refreshHeartsValues() {
+    if (this.panelMode !== 'hearts' || !this.heartsValueTexts.length) return;
+    const state = getRoom()?.state;
+    if (!state) return;
+    NPCS.forEach((npc, i) => {
+      const text = this.heartsValueTexts[i];
+      if (!text) return;
+      const hearts = Math.floor((state.hearts?.get?.(npc.id)?.points ?? 0) / 100);
+      const bar = '♥'.repeat(hearts) + '♡'.repeat(MAX_HEARTS - hearts);
+      text.setText(`${bar}  ${hearts}/${MAX_HEARTS}`);
+    });
   }
 
   private renderPanel() {
     const room = getRoom();
     if (!room?.state) return;
     const state = room.state;
-    let text = '';
 
     if (this.panelMode === 'jobs') {
       this.renderJobBoard(state.activeJobId);
+      return;
+    }
+    if (this.panelMode === 'hearts') {
+      this.renderHeartsBoard();
       return;
     }
 
@@ -367,29 +410,111 @@ export class UIScene extends Phaser.Scene {
     this.panelInner.setSize(442, 332);
     this.panelText.setPosition(-205, -152).setVisible(true);
 
-    if (this.panelMode === 'progress') {
-      text = 'JOB PROGRESS\nFinish every Help Wanted job to reopen the valley.\n\n';
-      for (const job of JOBS) {
-        const done = !!state.jobsCompleted?.get?.(job.id);
-        const available = !!state.availableJobs?.get?.(job.id);
-        const active = state.activeJobId === job.id;
-        const mark = done ? '[x]' : active ? '[>]' : available ? '[ ]' : '[-]';
-        text += `${mark} ${job.title}${job.isBigHouse ? `  (floor ${job.houseFloor})` : ''}\n`;
+    let text = 'JOB PROGRESS\nFinish every Help Wanted job to reopen the valley.\n\n';
+    for (const job of JOBS) {
+      const done = !!state.jobsCompleted?.get?.(job.id);
+      const available = !!state.availableJobs?.get?.(job.id);
+      const active = state.activeJobId === job.id;
+      const mark = done ? '[x]' : active ? '[>]' : available ? '[ ]' : '[-]';
+      text += `${mark} ${job.title}${job.isBigHouse ? `  (floor ${job.houseFloor})` : ''}\n`;
+    }
+    const doneCount = JOBS.filter((j) => state.jobsCompleted?.get?.(j.id)).length;
+    text += `\n${doneCount}/${JOBS.length} cleared · Big House floor unlocked: ${state.houseFloorUnlocked}/4`;
+    this.panelText.setText(text);
+  }
+
+  private renderHeartsBoard() {
+    const room = getRoom();
+    if (!room?.state) return;
+    const state = room.state;
+    const savedScroll = this.heartsScrollY;
+
+    this.clearJobBoard();
+    this.panelText.setVisible(false);
+    this.panelBg.setSize(480, 420);
+    this.panelInner.setSize(462, 402);
+
+    const add = <T extends Phaser.GameObjects.GameObject>(object: T): T => {
+      this.panel.add(object);
+      this.jobBoardObjects.push(object);
+      return object;
+    };
+
+    add(this.add.text(0, -178, 'FRIENDSHIP HEARTS', pxTitle(15, '#713b26')).setOrigin(0.5));
+    add(
+      this.add
+        .text(0, -148, 'E talk · G gift · 1-6 / H pick item · scroll', px(12, '#8d5a3b'))
+        .setOrigin(0.5),
+    );
+
+    const viewportW = 420;
+    const viewportH = 280;
+    const viewportTop = this.heartsViewportTop;
+    add(
+      this.add
+        .rectangle(0, viewportTop + viewportH / 2, viewportW + 16, viewportH + 12, 0xffe4ad)
+        .setStrokeStyle(3, 0xb56b3b),
+    );
+
+    const list = this.add.container(0, 0);
+    this.panel.add(list);
+    this.jobBoardObjects.push(list);
+    this.heartsList = list;
+
+    const rowH = 52;
+    this.heartsValueTexts = [];
+    NPCS.forEach((npc, i) => {
+      const y = i * rowH + 26;
+      const h = state.hearts?.get?.(npc.id);
+      const hearts = Math.floor((h?.points ?? 0) / 100);
+      const bar = '♥'.repeat(hearts) + '♡'.repeat(MAX_HEARTS - hearts);
+      const key = npcTextureKey(npc.id);
+
+      if (this.textures.exists(key)) {
+        list.add(this.add.image(-178, y, key).setScale(1.65).setOrigin(0.5, 0.7));
+      } else {
+        list.add(this.add.circle(-178, y - 4, 14, npc.color).setStrokeStyle(2, 0x713b26));
       }
-      const doneCount = JOBS.filter((j) => state.jobsCompleted?.get?.(j.id)).length;
-      text += `\n${doneCount}/${JOBS.length} cleared · Big House floor unlocked: ${state.houseFloorUnlocked}/4`;
-    } else if (this.panelMode === 'hearts') {
-      text = 'FRIENDSHIP HEARTS\n(E talk · G gift · 1-6 / H pick item)\n\n';
-      for (const npc of NPCS) {
-        const h = state.hearts?.get?.(npc.id);
-        const pts = h?.points ?? 0;
-        const hearts = Math.floor(pts / 100);
-        const bar = '♥'.repeat(hearts) + '♡'.repeat(MAX_HEARTS - hearts);
-        text += `${npc.name} · ${npc.role}\n${bar}  ${hearts}/${MAX_HEARTS}\n\n`;
-      }
+      list.add(this.add.text(-148, y - 14, npc.name, px(15, '#5d3022')).setOrigin(0, 0.5));
+      const valueText = this.add
+        .text(-148, y + 10, `${bar}  ${hearts}/${MAX_HEARTS}`, px(13, '#8d5a3b'))
+        .setOrigin(0, 0.5);
+      list.add(valueText);
+      this.heartsValueTexts.push(valueText);
+    });
+
+    const contentH = NPCS.length * rowH;
+    this.heartsMaxScroll = Math.max(0, contentH - viewportH);
+    this.heartsScrollY = Phaser.Math.Clamp(savedScroll, 0, this.heartsMaxScroll);
+    list.setPosition(0, viewportTop - this.heartsScrollY);
+
+    // Geometry masks use world space; list is a child of the centered panel.
+    const maskGfx = this.make.graphics({ add: false });
+    maskGfx.fillStyle(0xffffff);
+    maskGfx.fillRect(
+      this.panel.x - viewportW / 2,
+      this.panel.y + viewportTop,
+      viewportW,
+      viewportH,
+    );
+    list.setMask(maskGfx.createGeometryMask());
+    this.heartsMaskGfx = maskGfx;
+    this.jobBoardObjects.push(maskGfx);
+
+    if (this.heartsMaxScroll > 0) {
+      add(this.add.text(0, 178, 'UP / DOWN or mouse wheel', px(11, '#8d5a3b')).setOrigin(0.5));
     }
 
-    this.panelText.setText(text);
+    const closeBg = add(this.add.rectangle(220, -185, 36, 36, 0xe5a85d).setStrokeStyle(4, 0x713b26));
+    add(this.add.text(220, -185, 'X', pxTitle(10, '#5d3022')).setOrigin(0.5));
+    closeBg.setInteractive({ useHandCursor: true });
+    closeBg.on('pointerover', () => closeBg.setFillStyle(0xffd783));
+    closeBg.on('pointerout', () => closeBg.setFillStyle(0xe5a85d));
+    closeBg.on('pointerdown', () => {
+      this.panelMode = 'none';
+      this.panel.setVisible(false);
+      this.clearJobBoard();
+    });
   }
 
   private renderJobBoard(activeJobId: string) {

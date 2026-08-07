@@ -81,7 +81,8 @@ export class InspectionScene extends Phaser.Scene {
       .setStrokeStyle(1, 0xffffff, 0.9)
       .setDepth(20);
     this.soulLabel = this.add
-      .text(0, 0, 'YOU', px(9, '#ffcccc'))
+      // Same backing pill as remote players so the name stays readable over the soul.
+      .text(0, 0, 'YOU', px(10, '#ffdede', { backgroundColor: '#000000aa', padding: { x: 3, y: 1 } }))
       .setOrigin(0.5)
       .setDepth(21);
 

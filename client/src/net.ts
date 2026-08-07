@@ -18,6 +18,10 @@ export function colyseusUrl() {
 export function setRoom(r: ValleyRoom | null) {
   room = r;
   sessionId = r?.sessionId || '';
+  // Dev-only hook so QA / recording scripts can read live state and drive inputs.
+  if (import.meta.env.DEV) {
+    (globalThis as unknown as { __vvRoom?: ValleyRoom | null }).__vvRoom = r;
+  }
 }
 
 export function getRoom() {

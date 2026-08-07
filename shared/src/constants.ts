@@ -15,12 +15,14 @@ export const HEARTS_HATED_GIFT = -100; // −1♥
 export const COFFEE_HEAL = 4;
 export const COFFEE_COST = 12;
 export const COFFEE_ITEM_ID = 'coffee';
-export const PLAYER_SPEED = 140;
+/** Pixels per second — the server integrates this over real time. */
+export const PLAYER_SPEED = 400;
 export const ATTACK_COOLDOWN_MS = 420;
 export const ATTACK_RANGE = 40;
-export const ATTACK_DAMAGE = 2;
+export const ATTACK_DAMAGE = 3;
 export const PLAYER_MAX_HP = 15;
-export const PLAYER_IFRAME_MS = 450;
+/** Long enough that one bad dodge costs a hit, not half your HP bar. */
+export const PLAYER_IFRAME_MS = 900;
 export const MONSTER_ATTACK_COOLDOWN_MS = 900;
 export const HURT_FLASH_MS = 420;
 export const ROOM_NAME = 'valley';
@@ -33,10 +35,12 @@ export const BATTLE_BOX = {
   w: 300,
   h: 196,
 };
-export const SOUL_SPEED = 100;
+/** Doorstep prompt and job entry share this radius so they never disagree. */
+export const JOB_DOOR_RADIUS = 44;
+export const SOUL_SPEED = 280;
 export const SOUL_RADIUS = 6;
 export const PLAYER_TURN_MS = 6500;
-export const ENEMY_TURN_MS = 9500;
+export const ENEMY_TURN_MS = 7500;
 
 export const PLAYER_COLORS = [0x4caf50, 0x2196f3, 0xff9800, 0xe91e63];
 

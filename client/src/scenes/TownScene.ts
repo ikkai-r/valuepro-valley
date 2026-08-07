@@ -1,5 +1,15 @@
 import Phaser from 'phaser';
-import { COFFEE_COST, JOBS, LOTS, MAP, NPCS, PLAYER_COLORS, TILE, Tool } from '@shared/index';
+import {
+  COFFEE_COST,
+  JOB_DOOR_RADIUS,
+  JOBS,
+  LOTS,
+  MAP,
+  NPCS,
+  PLAYER_COLORS,
+  TILE,
+  Tool,
+} from '@shared/index';
 import { playCharacterAnim } from '../characters';
 import { npcTextureKey } from '../npcs';
 import { getRoom, getSessionId, sendInput } from '../net';
@@ -283,7 +293,8 @@ export class TownScene extends Phaser.Scene {
 
     // Bunk area label — beds themselves spawn per joined player in syncFromState.
     this.bedsLabel = this.add
-      .text(3 * TILE, 9.4 * TILE, 'Bunks', {
+      // Sits above the bed column so it never lands on a bunk's name label.
+      .text(2.2 * TILE, 8.8 * TILE, 'Bunks', {
         fontFamily: PIXEL_FONT,
         fontSize: '11px',
         color: '#fff8e1',
@@ -451,7 +462,8 @@ export class TownScene extends Phaser.Scene {
       const dx = lot.x + lot.w / 2;
       const dy = lot.y + lot.h + 10;
       const me = state.players?.get?.(getSessionId());
-      const nearDoor = !!me && Phaser.Math.Distance.Between(me.x, me.y, dx, dy) <= 44;
+      const nearDoor =
+        !!me && Phaser.Math.Distance.Between(me.x, me.y, dx, dy) <= JOB_DOOR_RADIUS;
       this.doorHintText.setText((me?.hp ?? 1) <= 0 ? 'SLEEP FIRST' : 'E ENTER');
       this.doorHintText.setVisible(nearDoor);
       this.doorHint.setPosition(dx, dy).setVisible(true);

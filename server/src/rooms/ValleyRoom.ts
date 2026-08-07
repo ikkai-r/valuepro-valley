@@ -15,6 +15,7 @@ import {
   HEARTS_LOVED_GIFT,
   HEARTS_PER_TALK,
   HURT_FLASH_MS,
+  JOB_DOOR_RADIUS,
   JOBS,
   GIFT_ITEMS,
   GIFT_ITEM_IDS,
@@ -84,6 +85,7 @@ export class ValleyRoom extends Room<ValleyState> {
   maxClients = MAX_PLAYERS;
   private attackCooldown = new Map<string, number>();
   private playerIframes = new Map<string, number>();
+  private lastMoveAt = new Map<string, number>();
   private bulletSeq = 0;
   private spawnAcc = 0;
   private patternCursor = 0;
@@ -145,6 +147,7 @@ export class ValleyRoom extends Room<ValleyState> {
     this.state.players.delete(client.sessionId);
     this.attackCooldown.delete(client.sessionId);
     this.playerIframes.delete(client.sessionId);
+    this.lastMoveAt.delete(client.sessionId);
     if (this.state.acceptedBy === client.sessionId && this.state.inspectionActive) {
       // keep inspection running for others
     }
@@ -348,6 +351,20 @@ export class ValleyRoom extends Room<ValleyState> {
     }
   }
 
+  /**
+   * Seconds of travel to grant for one move message, capped at 50ms so a laggy
+   * client catching up (or a spammy one) can never outrun everyone else.
+   */
+  private moveDelta(playerId: string) {
+    const now = Date.now();
+    const gap = now - (this.lastMoveAt.get(playerId) ?? now);
+    this.lastMoveAt.set(playerId, now);
+    // A big gap means the key was just pressed, so start with a single frame
+    // instead of lurching forward.
+    if (gap > 200) return 1 / 60;
+    return clamp(gap / 1000, 0, 0.05);
+  }
+
   private movePlayer(player: PlayerState, dx: number, dy: number) {
     if (player.sleeping) return;
     if (player.inInspection && player.hp <= 0) return;
@@ -357,10 +374,14 @@ export class ValleyRoom extends Room<ValleyState> {
     if (Math.abs(nx) > Math.abs(ny)) player.facing = nx > 0 ? 'right' : 'left';
     else if (ny !== 0) player.facing = ny > 0 ? 'down' : 'up';
 
+    // Clients send one move per rendered frame, so integrate over real elapsed
+    // time — otherwise a 120Hz player walks twice as fast as a 60Hz one.
+    const dtStep = this.moveDelta(player.id);
+
     if (player.inInspection) {
       // Undertale soul only moves during enemy dodge phase
       if (this.state.battlePhase !== 'enemy_turn') return;
-      const speed = SOUL_SPEED * 0.05;
+      const speed = SOUL_SPEED * dtStep;
       const pad = SOUL_RADIUS + 2;
       player.x = clamp(
         player.x + nx * speed,
@@ -375,7 +396,7 @@ export class ValleyRoom extends Room<ValleyState> {
       return;
     }
 
-    const speed = PLAYER_SPEED * 0.05;
+    const speed = PLAYER_SPEED * dtStep;
     const targetX = clamp(player.x + nx * speed, TILE, (MAP.widthTiles - 1) * TILE);
     const targetY = clamp(player.y + ny * speed, TILE, (MAP.heightTiles - 1) * TILE);
 
@@ -442,8 +463,9 @@ export class ValleyRoom extends Room<ValleyState> {
     const lot = LOTS.find((l) => l.id === job?.lotId);
     if (!job || !lot) return false;
     const door = this.jobDoorPoint(lot);
-    // Tight radius — must be at the doorstep, not just near the lot.
-    if (!near(player.x, player.y, door.x, door.y, 28)) return false;
+    // Must match the client's doorstep prompt radius, or E does nothing while
+    // "E ENTER" is on screen.
+    if (!near(player.x, player.y, door.x, door.y, JOB_DOOR_RADIUS)) return false;
     this.enterInspection(player);
     return true;
   }
@@ -557,6 +579,12 @@ export class ValleyRoom extends Room<ValleyState> {
   private centerSoul(player: PlayerState) {
     player.x = BATTLE_BOX.x + BATTLE_BOX.w / 2;
     player.y = BATTLE_BOX.y + BATTLE_BOX.h / 2;
+  }
+
+  /** Drop a player back on the plaza, fanned out so the party never stacks. */
+  private returnToTown(player: PlayerState, index: number) {
+    player.x = 10 * TILE + index * 26;
+    player.y = 12.5 * TILE;
   }
 
   /** Fan the party across the arena — stacked souls look like a single player. */
@@ -909,8 +937,7 @@ export class ValleyRoom extends Room<ValleyState> {
   private leaveInspection(player: PlayerState) {
     player.inInspection = false;
     player.actedThisTurn = false;
-    player.x = 10 * TILE;
-    player.y = 12.5 * TILE;
+    this.returnToTown(player, 0);
     let anyInside = false;
     this.state.players.forEach((p) => {
       if (p.inInspection) anyInside = true;
@@ -935,12 +962,12 @@ export class ValleyRoom extends Room<ValleyState> {
     const job = JOBS.find((j) => j.id === this.state.activeJobId);
     if (!job) return;
 
+    let returned = 0;
     this.state.players.forEach((p) => {
       p.coins += Math.floor(job.payout / Math.max(1, this.state.players.size));
       if (p.inInspection) {
         p.inInspection = false;
-        p.x = 10 * TILE;
-        p.y = 12.5 * TILE;
+        this.returnToTown(p, returned++);
       }
     });
     this.state.reputation += job.reputation;
@@ -1167,11 +1194,10 @@ export class ValleyRoom extends Room<ValleyState> {
     // Only exit the battle once every party member has been knocked out.
     const party = [...this.state.players.values()].filter((p) => p.inInspection);
     if (party.length > 0 && party.every((p) => p.hp <= 0)) {
-      party.forEach((p) => {
+      party.forEach((p, i) => {
         p.inInspection = false;
         p.actedThisTurn = false;
-        p.x = 10 * TILE;
-        p.y = 12.5 * TILE;
+        this.returnToTown(p, i);
       });
       this.state.inspectionActive = false;
       this.state.monsters.clear();
