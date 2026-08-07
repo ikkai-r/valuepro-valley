@@ -43,6 +43,8 @@ export class InspectionScene extends Phaser.Scene {
   private hint!: Phaser.GameObjects.Text;
   private hpHud!: Phaser.GameObjects.Text;
   private hpBarGfx!: Phaser.GameObjects.Graphics;
+  private soulLabel!: Phaser.GameObjects.Text;
+  private partyHud!: Phaser.GameObjects.Text;
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
   private wasd!: {
     W: Phaser.Input.Keyboard.Key;
@@ -78,9 +80,16 @@ export class InspectionScene extends Phaser.Scene {
       .polygon(0, 0, [0, -8, 8, 0, 0, 8, -8, 0], 0xff0000)
       .setStrokeStyle(1, 0xffffff, 0.9)
       .setDepth(20);
+    this.soulLabel = this.add
+      .text(0, 0, 'YOU', px(9, '#ffcccc'))
+      .setOrigin(0.5)
+      .setDepth(21);
 
     this.hpBarGfx = this.add.graphics().setDepth(30);
     this.hpHud = this.add.text(40, 452, '', px(13, '#ffffff')).setDepth(31);
+    this.partyHud = this.add.text(STAGE.w - 40, 452, '', px(12, '#ffe082', { align: 'right' }))
+      .setOrigin(1, 0)
+      .setDepth(31);
     this.hint = this.add
       .text(STAGE.w / 2, 505, '', px(12, '#cfcfcf', {
         align: 'center',
@@ -163,6 +172,18 @@ export class InspectionScene extends Phaser.Scene {
 
     const me = state.players?.get?.(getSessionId());
     this.hpBarGfx.clear();
+    let partyCount = 0;
+    const partyNames: string[] = [];
+    state.players?.forEach(
+      (p: { inInspection: boolean; name: string; hp: number }) => {
+        if (!p.inInspection) return;
+        partyCount += 1;
+        partyNames.push(p.name);
+      },
+    );
+    this.partyHud.setText(
+      partyCount > 1 ? `PARTY ${partyCount}\n${partyNames.join('\n')}` : '',
+    );
     if (me) {
       const ratio = me.maxHp > 0 ? me.hp / me.maxHp : 0;
       drawBar(this.hpBarGfx, 40, 472, 180, 10, ratio, 0xffff00);
@@ -170,6 +191,7 @@ export class InspectionScene extends Phaser.Scene {
       if (me.inInspection) {
         this.soulLocal.setPosition(me.x, me.y);
         this.soulLocal.setVisible(true);
+        this.soulLabel.setText(me.name || 'YOU').setPosition(me.x, me.y - 18).setVisible(true);
         if (phase === 'enemy_turn') {
           this.soulLocal.setFillStyle(0xff0000);
         } else if (me.actedThisTurn) {
@@ -179,6 +201,7 @@ export class InspectionScene extends Phaser.Scene {
         }
       } else {
         this.soulLocal.setVisible(false);
+        this.soulLabel.setVisible(false);
       }
     }
 
@@ -297,12 +320,17 @@ export class InspectionScene extends Phaser.Scene {
         seenP.add(id);
         let c = this.remotes.get(id);
         if (!c) {
-          const soul = this.add.polygon(0, 0, [0, -7, 7, 0, 0, 7, -7, 0], playerColor(p.gender, p.colorIndex));
-          const label = this.add.text(0, -16, p.name, px(9, '#ffffff')).setOrigin(0.5);
+          const soul = this.add
+            .polygon(0, 0, [0, -7, 7, 0, 0, 7, -7, 0], playerColor(p.gender, p.colorIndex))
+            .setStrokeStyle(2, 0xffffff, 0.95);
+          const label = this.add
+            .text(0, -18, p.name, px(10, '#ffffff', { backgroundColor: '#000000aa', padding: { x: 3, y: 1 } }))
+            .setOrigin(0.5);
           c = this.add.container(p.x, p.y, [soul, label]).setDepth(15);
           this.remotes.set(id, c);
         }
         c.setPosition(p.x, p.y);
+        c.setVisible(true);
         const acted = !!(p as { actedThisTurn?: boolean }).actedThisTurn;
         const phaseNow = state.battlePhase || 'player_turn';
         const mark = phaseNow === 'player_turn' && acted ? ' ✓' : '';

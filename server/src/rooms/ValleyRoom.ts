@@ -550,6 +550,22 @@ export class ValleyRoom extends Room<ValleyState> {
     player.y = BATTLE_BOX.y + BATTLE_BOX.h / 2;
   }
 
+  /** Fan the party across the arena — stacked souls look like a single player. */
+  private resetSouls() {
+    const fighters = [...this.state.players.values()].filter((p) => p.inInspection);
+    if (fighters.length <= 1) {
+      if (fighters[0]) this.centerSoul(fighters[0]);
+      return;
+    }
+    const cx = BATTLE_BOX.x + BATTLE_BOX.w / 2;
+    const cy = BATTLE_BOX.y + BATTLE_BOX.h / 2;
+    const spacing = Math.min(60, (BATTLE_BOX.w - 60) / fighters.length);
+    fighters.forEach((p, i) => {
+      p.x = cx + (i - (fighters.length - 1) / 2) * spacing;
+      p.y = cy;
+    });
+  }
+
   private startPlayerTurn() {
     this.state.battlePhase = 'player_turn';
     this.state.battlePhaseEndsAt = Date.now() + PLAYER_TURN_MS;
@@ -558,8 +574,8 @@ export class ValleyRoom extends Room<ValleyState> {
     this.state.dodgeHint = '';
     this.state.players.forEach((p) => {
       p.actedThisTurn = false;
-      if (p.inInspection) this.centerSoul(p);
     });
+    this.resetSouls();
     const n = this.fighters().length;
     this.setAnnouncement(
       n > 1
@@ -586,9 +602,7 @@ export class ValleyRoom extends Room<ValleyState> {
     this.patternCursor = 0;
     this.safeLane = Math.floor(Math.random() * 4);
     this.state.dodgeHint = 'DODGE!';
-    this.state.players.forEach((p) => {
-      if (p.inInspection) this.centerSoul(p);
-    });
+    this.resetSouls();
     this.setAnnouncement('* Dodge!');
   }
 
@@ -830,19 +844,20 @@ export class ValleyRoom extends Room<ValleyState> {
 
     // One door press pulls the whole party into the shared fight.
     let pulled = 0;
-    this.state.players.forEach((p) => {
+    for (const p of this.state.players.values()) {
       if (p.sleeping) p.sleeping = false;
       p.inInspection = true;
       p.actedThisTurn = this.state.battlePhase !== 'player_turn';
-      this.centerSoul(p);
       if (p.hp <= 0) p.hp = p.maxHp;
       pulled += 1;
-    });
+    }
+    this.resetSouls();
     this.setAnnouncement(
       pulled > 1
         ? `Party fight started (${pulled} inside)! Shared monsters — each acts once, then dodge together.`
         : `${player.name} entered the fight! HP ${player.hp}/${player.maxHp} — SPACE fight OR C coffee, then dodge.`,
     );
+    // Message + schema so every client swaps to the battle screen immediately.
     this.broadcast('enterInspection', { jobId: job.id });
   }
 

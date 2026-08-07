@@ -140,20 +140,36 @@ export class TownScene extends Phaser.Scene {
 
     room.onStateChange(() => {
       this.syncFromState();
-      const me = room.state.players?.get(getSessionId());
-      if (me?.inInspection && !this.scene.isActive('Inspection')) {
-        this.scene.sleep('Town');
-        this.scene.launch('Inspection');
-      } else if (me && !me.inInspection && this.scene.isActive('Inspection')) {
-        this.scene.stop('Inspection');
-        this.scene.wake('Town');
-      }
+      this.syncBattleScene();
     });
     room.onMessage('festival', () => this.game.events.emit('festival'));
+    // Force every client into the shared fight — don't rely only on schema patches.
+    room.onMessage('enterInspection', () => this.enterBattleScene());
 
     this.syncFromState();
+    this.syncBattleScene();
     const firstSlot = hotbarGifts()[0];
     if (firstSlot) this.selectGift(firstSlot);
+  }
+
+  /** Shared fight: open Inspection as soon as this client is flagged (or told) to enter. */
+  private enterBattleScene() {
+    if (this.scene.isActive('Inspection')) return;
+    this.scene.sleep('Town');
+    this.scene.launch('Inspection');
+  }
+
+  private leaveBattleScene() {
+    if (!this.scene.isActive('Inspection')) return;
+    this.scene.stop('Inspection');
+    this.scene.wake('Town');
+  }
+
+  private syncBattleScene() {
+    const me = getRoom()?.state?.players?.get(getSessionId());
+    if (!me) return;
+    if (me.inInspection) this.enterBattleScene();
+    else this.leaveBattleScene();
   }
 
   /** The highlighted slot is what G sends — nothing else to switch. */
