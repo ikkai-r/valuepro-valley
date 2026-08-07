@@ -28,6 +28,8 @@ export class TownScene extends Phaser.Scene {
   private localLabel!: Phaser.GameObjects.Text;
   private remoteSprites = new Map<string, Phaser.GameObjects.Container>();
   private lastPos = new Map<string, { x: number; y: number }>();
+  private lastMovedAt = new Map<string, number>();
+  private localMovingUntil = 0;
   private npcSprites = new Map<string, Phaser.GameObjects.Container>();
   private bedSprites = new Map<string, Phaser.GameObjects.Container>();
   private bedsLabel?: Phaser.GameObjects.Text;
@@ -371,7 +373,9 @@ export class TownScene extends Phaser.Scene {
         if ((p.bedSlot ?? -1) >= 0) seenBeds.add(id);
 
         const prev = this.lastPos.get(id);
-        const moving = !!prev && (Math.abs(prev.x - p.x) > 0.4 || Math.abs(prev.y - p.y) > 0.4);
+        if (prev && (Math.abs(prev.x - p.x) > 0.4 || Math.abs(prev.y - p.y) > 0.4)) {
+          this.lastMovedAt.set(id, this.time.now);
+        }
         this.lastPos.set(id, { x: p.x, y: p.y });
 
         if (id === getSessionId()) {
@@ -381,13 +385,6 @@ export class TownScene extends Phaser.Scene {
             this.localSprite.setVisible(!p.sleeping);
             this.localLabel.setPosition(p.x, p.y - 28).setText(p.name).setDepth(101 + p.y);
             this.localLabel.setVisible(!p.sleeping);
-            playCharacterAnim(
-              this.localSprite,
-              p.gender,
-              p.facing,
-              moving && !p.sleeping,
-              p.colorIndex,
-            );
           } else {
             this.localSprite.setVisible(false);
             this.localLabel.setVisible(false);
@@ -404,8 +401,6 @@ export class TownScene extends Phaser.Scene {
           c = this.add.container(p.x, p.y, [body, label]);
           this.remoteSprites.set(id, c);
         }
-        const body = c.getAt(0) as Phaser.GameObjects.Sprite;
-        playCharacterAnim(body, p.gender, p.facing, moving && !p.sleeping, p.colorIndex);
         c.setPosition(p.x, p.y);
         c.setDepth(100 + p.y);
         c.setVisible(!p.inInspection && !p.sleeping);
@@ -417,6 +412,7 @@ export class TownScene extends Phaser.Scene {
         spr.destroy();
         this.remoteSprites.delete(id);
         this.lastPos.delete(id);
+        this.lastMovedAt.delete(id);
       }
     }
     for (const [id, spr] of this.bedSprites) {
@@ -441,6 +437,51 @@ export class TownScene extends Phaser.Scene {
     } else {
       this.doorHint.setVisible(false);
     }
+  }
+
+  /**
+   * The local player follows key input so the walk cycle stops the frame a key is
+   * released; remote players fall back to a short window after their last move,
+   * since a standing player stops sending state patches.
+   */
+  private isWalking(id: string) {
+    if (id === getSessionId()) return this.time.now < this.localMovingUntil;
+    return this.time.now - (this.lastMovedAt.get(id) ?? -Infinity) < 160;
+  }
+
+  /** Idle frames keep the last facing, so stopping just freezes the direction. */
+  private refreshAnims() {
+    const state = getRoom()?.state;
+    if (!state) return;
+    state.players?.forEach(
+      (
+        p: {
+          gender?: string;
+          facing?: string;
+          colorIndex: number;
+          sleeping: boolean;
+          inInspection: boolean;
+        },
+        id: string,
+      ) => {
+        const walking = this.isWalking(id) && !p.sleeping;
+        if (id === getSessionId()) {
+          if (!p.inInspection) {
+            playCharacterAnim(this.localSprite, p.gender, p.facing, walking, p.colorIndex);
+          }
+          return;
+        }
+        const c = this.remoteSprites.get(id);
+        if (!c) return;
+        playCharacterAnim(
+          c.getAt(0) as Phaser.GameObjects.Sprite,
+          p.gender,
+          p.facing,
+          walking,
+          p.colorIndex,
+        );
+      },
+    );
   }
 
   private syncBed(playerId: string, name: string, bedSlot: number, tint: number, sleeping: boolean) {
@@ -472,7 +513,11 @@ export class TownScene extends Phaser.Scene {
     const room = getRoom();
     if (!room) return;
     const me = room.state.players?.get(getSessionId());
-    if (me?.inInspection || me?.sleeping) return;
+    if (me?.inInspection || me?.sleeping) {
+      this.localMovingUntil = 0;
+      this.refreshAnims();
+      return;
+    }
 
     let dx = 0;
     let dy = 0;
@@ -480,7 +525,13 @@ export class TownScene extends Phaser.Scene {
     if (this.cursors.right.isDown || this.wasd.D.isDown) dx += 1;
     if (this.cursors.up.isDown || this.wasd.W.isDown) dy -= 1;
     if (this.cursors.down.isDown || this.wasd.S.isDown) dy += 1;
-    if (dx || dy) sendInput({ type: 'move', dx, dy });
+    if (dx || dy) {
+      sendInput({ type: 'move', dx, dy });
+      this.localMovingUntil = this.time.now + 80;
+    } else {
+      this.localMovingUntil = 0;
+    }
+    this.refreshAnims();
 
     if (me) {
       this.marker.setPosition(Math.floor(me.x / TILE) * TILE + 16, Math.floor(me.y / TILE) * TILE + 16);
